@@ -1,0 +1,6 @@
+2025-10-17 23:01:26,971 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-17 23:02:10,288 - INFO - Epoch 1 completed in 43.348439 seconds
+2025-10-17 23:02:17,807 - INFO - torch.cuda.max_memory_reserved() : 0.548828125
+2025-10-22 09:28:42,965 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-22 09:29:15,849 - INFO - Epoch 1 completed in 32.898684 seconds
+2025-10-22 09:29:21,314 - INFO - torch.cuda.max_memory_reserved() : 9.4375

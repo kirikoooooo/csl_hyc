@@ -1,0 +1,25 @@
+﻿文件名,反向传播显存峰值 (MB),max_memory_reserved (GB),策略后平均 epoch 时间 (s)
+Cricket2GB.log,1798.81,59.0,59.0
+Cricket4GB.log,1798.81,1.0,1.0
+PEMS-SF4GB.log,5036.82,37.0,37.0
+DuckDuckGeese4GB.log,9843.19,8.0,8.0
+MotorImagery16GB.log,,23.0,
+PEMS-SF2GB.log,5036.82,32.0,32.0
+DuckDuckGeese2GB.log,,4.0,
+MotorImagery2GB.log,,18.0,
+Cricket1GB.log,1798.81,56.0,56.0
+PEMS-SF12GB.log,5036.82,45.0,45.0
+DuckDuckGeese12GB.log,,13.0,
+Cricket0.5GB.log,1007.82,53.0,53.0
+PEMS-SF1GB.log,3121.39,28.0,28.0
+PEMS-SF16GB.log,5036.82,50.0,50.0
+PEMS-SF8GB.log,5036.82,41.0,41.0
+Cricket0.25GB.log,647.68,50.0,50.0
+DuckDuckGeese1GB.log,,3.0,
+DuckDuckGeese0.5GB.log,,2.0,
+MotorImagery8GB.log,15398.72,11.0,11.0
+MotorImagery4GB.log,10954.66,47.0,47.0
+DuckDuckGeese24GB.log,,15.0,
+DuckDuckGeese16GB.log,,14.0,
+MotorImagery12GB.log,,17.0,
+DuckDuckGeese8GB.log,14643.75,11.0,11.0

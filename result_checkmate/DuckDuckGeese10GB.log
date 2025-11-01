@@ -1,0 +1,152 @@
+2025-10-11 22:18:34,607 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-11 22:18:41,883 - INFO - Epoch 1 completed in 7.290849 seconds
+2025-10-11 22:18:44,160 - INFO - torch.cuda.max_memory_reserved() : 11.17578125
+2025-10-11 22:18:50,946 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-10-11 22:18:50,947 - INFO - 总反向传播时间: 6.723755s
+2025-10-11 22:18:50,947 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-10-11 22:18:50,947 - INFO - A = 5.327565, B = 0.467389, b = 0.928802s
+2025-10-11 22:18:50,990 - INFO - Set parameter LicenseID to value 2706656
+2025-10-11 22:18:51,019 - INFO - Set parameter LogToConsole to value 1
+2025-10-11 22:18:51,019 - INFO - Set parameter LogFile to value ""
+2025-10-11 22:18:51,019 - INFO - Set parameter Threads to value 12
+2025-10-11 22:18:51,019 - INFO - Set parameter TimeLimit to value 3600
+2025-10-11 22:18:51,019 - INFO - Set parameter OptimalityTol to value 0.0001
+2025-10-11 22:18:51,020 - INFO - Set parameter IntFeasTol to value 1e-05
+2025-10-11 22:18:51,020 - INFO - Set parameter StartNodeLimit to value 10000000
+2025-10-11 22:18:51,077 - INFO - Set parameter TimeLimit to value 3600
+2025-10-11 22:18:51,077 - INFO - 
+2025-10-11 22:18:51,077 - INFO - 
+2025-10-11 22:18:51,077 - INFO - Restarting solve
+2025-10-11 22:18:51,077 - INFO - 
+2025-10-11 22:18:51,077 - INFO - 
+2025-10-11 22:18:51,079 - INFO - Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (linux64 - "Ubuntu 20.04.6 LTS")
+2025-10-11 22:18:51,079 - INFO - 
+2025-10-11 22:18:51,079 - INFO - CPU model: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+2025-10-11 22:18:51,079 - INFO - Thread count: 48 physical cores, 96 logical processors, using up to 12 threads
+2025-10-11 22:18:51,079 - INFO - 
+2025-10-11 22:18:51,079 - INFO - Non-default parameters:
+2025-10-11 22:18:51,079 - INFO - TimeLimit  3600
+2025-10-11 22:18:51,079 - INFO - OptimalityTol  0.0001
+2025-10-11 22:18:51,079 - INFO - StartNodeLimit  10000000
+2025-10-11 22:18:51,079 - INFO - Threads  12
+2025-10-11 22:18:51,079 - INFO - 
+2025-10-11 22:18:51,079 - INFO - Optimize a model with 5603 rows, 3584 columns and 15200 nonzeros
+2025-10-11 22:18:51,079 - INFO - Model fingerprint: 0xc2d9c992
+2025-10-11 22:18:51,080 - INFO - Variable types: 1024 continuous, 2560 integer (2560 binary)
+2025-10-11 22:18:51,080 - INFO - Coefficient statistics:
+2025-10-11 22:18:51,080 - INFO -   Matrix range     [1e+00, 4e+15]
+2025-10-11 22:18:51,080 - INFO -   Objective range  [1e+05, 1e+06]
+2025-10-11 22:18:51,080 - INFO -   Bounds range     [1e+00, 1e+16]
+2025-10-11 22:18:51,080 - INFO -   RHS range        [1e+00, 1e+16]
+2025-10-11 22:18:51,080 - INFO - Warning: Model contains large matrix coefficient range
+2025-10-11 22:18:51,080 - INFO - Warning: Model contains large rhs
+2025-10-11 22:18:51,080 - INFO - Warning: Model contains large bounds
+2025-10-11 22:18:51,080 - INFO -          Consider reformulating model or setting NumericFocus parameter
+2025-10-11 22:18:51,080 - INFO -          to avoid numerical issues.
+2025-10-11 22:18:51,094 - INFO - Presolve removed 4283 rows and 1964 columns
+2025-10-11 22:18:51,094 - INFO - Presolve time: 0.01s
+2025-10-11 22:18:51,094 - INFO - Presolved: 1320 rows, 1620 columns, 4514 nonzeros
+2025-10-11 22:18:51,095 - INFO - Variable types: 0 continuous, 1620 integer (1095 binary)
+2025-10-11 22:18:51,106 - INFO - 
+2025-10-11 22:18:51,106 - INFO - Root relaxation: objective 2.773053e+07, 462 iterations, 0.00 seconds (0.01 work units)
+2025-10-11 22:18:51,111 - INFO - 
+2025-10-11 22:18:51,111 - INFO -     Nodes    |    Current Node    |     Objective Bounds      |     Work
+2025-10-11 22:18:51,111 - INFO -  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+2025-10-11 22:18:51,111 - INFO - 
+2025-10-11 22:18:51,111 - INFO -      0     0 2.7731e+07    0  101          - 2.7731e+07      -     -    0s
+2025-10-11 22:18:51,150 - INFO -      0     0 2.7990e+07    0  228          - 2.7990e+07      -     -    0s
+2025-10-11 22:18:51,165 - INFO -      0     0 2.8011e+07    0  101          - 2.8011e+07      -     -    0s
+2025-10-11 22:18:51,180 - INFO -      0     0 2.8017e+07    0  213          - 2.8017e+07      -     -    0s
+2025-10-11 22:18:51,181 - INFO -      0     0 2.8017e+07    0  235          - 2.8017e+07      -     -    0s
+2025-10-11 22:18:51,192 - INFO -      0     0 2.8018e+07    0  183          - 2.8018e+07      -     -    0s
+2025-10-11 22:18:51,199 - INFO -      0     0 2.8062e+07    0  326          - 2.8062e+07      -     -    0s
+2025-10-11 22:18:51,202 - INFO -      0     0 2.8066e+07    0  326          - 2.8066e+07      -     -    0s
+2025-10-11 22:18:51,215 - INFO -      0     0 2.8066e+07    0  260          - 2.8066e+07      -     -    0s
+2025-10-11 22:18:51,267 - INFO -      0     2 2.8066e+07    0  260          - 2.8066e+07      -     -    0s
+2025-10-11 22:18:51,321 - INFO - *  438   432              33    2.963365e+07 2.8128e+07  5.08%   7.6    0s
+2025-10-11 22:18:51,358 - INFO - *  836   719              57    2.958564e+07 2.8134e+07  4.91%   6.2    0s
+2025-10-11 22:18:51,369 - INFO - *  869   801              34    2.903419e+07 2.8134e+07  3.10%   6.1    0s
+2025-10-11 22:18:51,394 - INFO - * 1490   880             134    2.839410e+07 2.8134e+07  0.92%   3.7    0s
+2025-10-11 22:18:51,394 - INFO - * 1532   880              93    2.813384e+07 2.8134e+07  0.00%   3.6    0s
+2025-10-11 22:18:51,396 - INFO - 
+2025-10-11 22:18:51,396 - INFO - Cutting planes:
+2025-10-11 22:18:51,396 - INFO -   Cover: 36
+2025-10-11 22:18:51,396 - INFO -   GUB cover: 3
+2025-10-11 22:18:51,396 - INFO - 
+2025-10-11 22:18:51,396 - INFO - Explored 1879 nodes (6240 simplex iterations) in 0.32 seconds (0.29 work units)
+2025-10-11 22:18:51,396 - INFO - Thread count was 12 (of 96 available processors)
+2025-10-11 22:18:51,397 - INFO - 
+2025-10-11 22:18:51,397 - INFO - Solution count 5: 2.81338e+07 2.83941e+07 2.90342e+07 ... 2.96337e+07
+2025-10-11 22:18:51,397 - INFO - 
+2025-10-11 22:18:51,397 - INFO - Optimal solution found (tolerance 1.00e-04)
+2025-10-11 22:18:51,397 - INFO - Warning: max constraint violation (1.0000e+00) exceeds tolerance
+2025-10-11 22:18:51,397 - INFO -          (possibly due to large matrix coefficients)
+2025-10-11 22:18:51,397 - INFO - Best objective 2.813384400000e+07, best bound 2.813384400000e+07, gap 0.0000%
+2025-10-11 22:18:51,408 - INFO - 规划前的显存GB：10.0
+2025-10-11 22:18:51,408 - INFO - 规划后的显存GB：8.647467613220215
+2025-10-11 22:18:51,408 - INFO - ✅ 最优策略：[1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+2025-10-11 22:18:51,408 - INFO - 📌 checkpoint 的欧氏长度:, [162, 189, 216]
+2025-10-11 22:18:51,409 - INFO - 📌 checkpoint 的余弦长度:, [27, 54, 81, 108, 135, 162, 189]
+2025-10-11 22:18:51,409 - INFO - 💾 最终显存峰值：%.2f MB % 22255.649505615234
+2025-10-11 22:18:51,413 - INFO - Epoch 2 completed in 7.252774 seconds
+2025-10-11 22:18:51,413 - INFO - torch.cuda.max_memory_reserved() : 11.17578125
+2025-10-11 22:18:57,383 - INFO - Epoch 3 completed in 5.969471 seconds
+2025-10-11 22:18:57,383 - INFO - 
+====================== [第1个 Epoch 收集统计数据] ======================
+2025-10-11 22:18:57,383 - INFO - 
+🔍 EUCLIDEAN modules:
+2025-10-11 22:18:57,383 - INFO - [Shapelet  27] forward_avg=0.007932s over 12 calls | peak=866.77MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet  54] forward_avg=0.009958s over 12 calls | peak=1508.45MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet  81] forward_avg=0.012729s over 12 calls | peak=1972.67MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 108] forward_avg=0.014216s over 12 calls | peak=2253.60MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 135] forward_avg=0.014998s over 12 calls | peak=2357.04MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 162] forward_avg=0.012982s over 12 calls | peak=2280.04MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 189] forward_avg=0.011957s over 12 calls | peak=2023.78MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 216] forward_avg=0.010586s over 12 calls | peak=1588.90MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - 
+🔍 COSINE modules:
+2025-10-11 22:18:57,384 - INFO - [Shapelet  27] forward_avg=0.003534s over 12 calls | peak=550.84MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet  54] forward_avg=0.005360s over 12 calls | peak=970.87MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet  81] forward_avg=0.006805s over 12 calls | peak=1271.50MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 108] forward_avg=0.008038s over 12 calls | peak=1451.84MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 135] forward_avg=0.008491s over 12 calls | peak=1513.58MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 162] forward_avg=0.007159s over 12 calls | peak=1454.06MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 189] forward_avg=0.006833s over 12 calls | peak=1275.63MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - [Shapelet 216] forward_avg=0.006409s over 12 calls | peak=977.89MB | final=0.00MB
+2025-10-11 22:18:57,384 - INFO - 
+🔍 CROSS modules:
+2025-10-11 22:18:57,384 - INFO - [Shapelet  27] forward_avg=0.001195s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet  54] forward_avg=0.001810s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet  81] forward_avg=0.002470s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet 108] forward_avg=0.002912s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet 135] forward_avg=0.002216s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet 162] forward_avg=0.002586s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet 189] forward_avg=0.002960s over 12 calls
+2025-10-11 22:18:57,384 - INFO - [Shapelet 216] forward_avg=0.003326s over 12 calls
+2025-10-11 22:18:57,384 - INFO - 
+💾 模型第一次反向传播阶段的显存峰值（所有模块中的最大值）: 11140.41 MB
+2025-10-11 22:18:57,384 - INFO - 
+💾 模型初始显存: 237.80 MB
+2025-10-11 22:18:57,384 - INFO - =======================================================================
+
+2025-10-11 22:18:57,384 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:03,010 - INFO - Epoch 4 completed in 5.624708 seconds
+2025-10-11 22:19:03,010 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:09,088 - INFO - Epoch 5 completed in 6.077508 seconds
+2025-10-11 22:19:09,089 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:14,989 - INFO - Epoch 6 completed in 5.899562 seconds
+2025-10-11 22:19:14,990 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:21,005 - INFO - Epoch 7 completed in 6.015050 seconds
+2025-10-11 22:19:21,006 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:26,903 - INFO - Epoch 8 completed in 5.896553 seconds
+2025-10-11 22:19:26,903 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:32,648 - INFO - Epoch 9 completed in 5.743768 seconds
+2025-10-11 22:19:32,648 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:38,674 - INFO - Epoch 10 completed in 6.025179 seconds
+2025-10-11 22:19:40,935 - INFO - torch.cuda.max_memory_reserved() : 13.4375
+2025-10-11 22:19:40,935 - INFO - !!!采用策略后的几个epoch 平均时间:5.906474858522415
+2025-10-11 22:19:40,935 - INFO - 
+
+
+

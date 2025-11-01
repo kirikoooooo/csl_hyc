@@ -1,0 +1,67 @@
+2025-10-21 17:12:32,720 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-21 17:12:35,582 - INFO - Epoch 1 completed in 2.868020 seconds
+2025-10-21 17:12:36,481 - INFO - torch.cuda.max_memory_reserved() : 3.95703125
+2025-10-21 17:12:38,773 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-10-21 17:12:38,773 - INFO - 总反向传播时间: 2.281858s
+2025-10-21 17:12:38,773 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-10-21 17:12:38,773 - INFO - A = 1.754499, B = 0.122613, b = 0.404746s
+2025-10-21 17:12:38,798 - INFO - Set parameter LicenseID to value 2706656
+2025-10-21 17:12:38,802 - INFO - Set parameter LogToConsole to value 1
+2025-10-21 17:12:38,802 - INFO - Set parameter LogFile to value ""
+2025-10-21 17:12:38,803 - INFO - Set parameter Threads to value 12
+2025-10-21 17:12:38,803 - INFO - Set parameter TimeLimit to value 3600
+2025-10-21 17:12:38,803 - INFO - Set parameter Method to value 1
+2025-10-21 17:12:38,854 - INFO - Set parameter TimeLimit to value 3000
+2025-10-21 17:12:38,855 - INFO - Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (linux64 - "Ubuntu 20.04.6 LTS")
+2025-10-21 17:12:38,856 - INFO - 
+2025-10-21 17:12:38,856 - INFO - CPU model: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+2025-10-21 17:12:38,856 - INFO - Thread count: 48 physical cores, 96 logical processors, using up to 12 threads
+2025-10-21 17:12:38,856 - INFO - 
+2025-10-21 17:12:38,856 - INFO - Non-default parameters:
+2025-10-21 17:12:38,856 - INFO - TimeLimit  3000
+2025-10-21 17:12:38,856 - INFO - Method  1
+2025-10-21 17:12:38,856 - INFO - Threads  12
+2025-10-21 17:12:38,856 - INFO - 
+2025-10-21 17:12:38,856 - INFO - Optimize a model with 3892 rows, 1699 columns and 20398 nonzeros
+2025-10-21 17:12:38,856 - INFO - Model fingerprint: 0x37fb7964
+2025-10-21 17:12:38,856 - INFO - Variable types: 0 continuous, 1699 integer (1699 binary)
+2025-10-21 17:12:38,856 - INFO - Coefficient statistics:
+2025-10-21 17:12:38,856 - INFO -   Matrix range     [1e+00, 2e+15]
+2025-10-21 17:12:38,856 - INFO -   Objective range  [5e+04, 5e+05]
+2025-10-21 17:12:38,856 - INFO -   Bounds range     [1e+00, 1e+00]
+2025-10-21 17:12:38,856 - INFO -   RHS range        [1e+00, 1e+15]
+2025-10-21 17:12:38,856 - INFO - Warning: Model contains large matrix coefficient range
+2025-10-21 17:12:38,856 - INFO - Warning: Model contains large rhs
+2025-10-21 17:12:38,856 - INFO -          Consider reformulating model or setting NumericFocus parameter
+2025-10-21 17:12:38,856 - INFO -          to avoid numerical issues.
+2025-10-21 17:12:38,859 - INFO - Presolve removed 1 rows and 0 columns
+2025-10-21 17:12:38,859 - INFO - Presolve time: 0.00s
+2025-10-21 17:12:38,859 - INFO - 
+2025-10-21 17:12:38,859 - INFO - Explored 0 nodes (0 simplex iterations) in 0.00 seconds (0.00 work units)
+2025-10-21 17:12:38,859 - INFO - Thread count was 1 (of 96 available processors)
+2025-10-21 17:12:38,859 - INFO - 
+2025-10-21 17:12:38,859 - INFO - Solution count 0
+2025-10-21 17:12:38,859 - INFO - 
+2025-10-21 17:12:38,859 - INFO - Model is infeasible
+2025-10-21 17:12:38,859 - INFO - Best objective -, best bound -, gap -
+2025-10-21 17:12:38,859 - INFO - Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (linux64 - "Ubuntu 20.04.6 LTS")
+2025-10-21 17:12:38,859 - INFO - 
+2025-10-21 17:12:38,859 - INFO - CPU model: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+2025-10-21 17:12:38,859 - INFO - Thread count: 48 physical cores, 96 logical processors, using up to 12 threads
+2025-10-21 17:12:38,859 - INFO - 
+2025-10-21 17:12:38,860 - INFO - Non-default parameters:
+2025-10-21 17:12:38,860 - INFO - TimeLimit  3000
+2025-10-21 17:12:38,860 - INFO - Method  1
+2025-10-21 17:12:38,860 - INFO - Threads  12
+2025-10-21 17:12:38,860 - INFO - 
+2025-10-21 17:12:38,860 - INFO - 
+2025-10-21 17:12:38,860 - INFO - IIS computed: 1 constraints, 0 bounds
+2025-10-21 17:12:38,860 - INFO - IIS runtime: 0.00 seconds (0.00 work units)
+2025-10-21 17:12:38,861 - ERROR - Infeasible model, check constraints carefully. Insufficient memory?
+Traceback (most recent call last):
+  File "/data/user_lixiongfei/csl_hyc/solver/monet_solver.py", line 446, in solve_ilp_gurobi
+    solution = ilpsolver.solve()
+  File "/data/user_lixiongfei/csl_hyc/solver/monet_solver.py", line 387, in solve
+    raise ValueError("Infeasible model, check constraints carefully. Insufficient memory?")
+ValueError: Infeasible model, check constraints carefully. Insufficient memory?

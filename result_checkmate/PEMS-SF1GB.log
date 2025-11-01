@@ -1,0 +1,63 @@
+2025-10-11 22:05:38,906 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-11 22:05:54,253 - INFO - Epoch 1 completed in 15.365578 seconds
+2025-10-11 22:05:57,564 - INFO - torch.cuda.max_memory_reserved() : 2.0546875
+2025-10-11 22:06:12,435 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-10-11 22:06:12,435 - INFO - 总反向传播时间: 14.749292s
+2025-10-11 22:06:12,435 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-10-11 22:06:12,435 - INFO - A = 8.604180, B = 0.771702, b = 5.373410s
+2025-10-11 22:06:12,477 - INFO - Set parameter LicenseID to value 2706656
+2025-10-11 22:06:12,485 - INFO - Set parameter LogToConsole to value 1
+2025-10-11 22:06:12,485 - INFO - Set parameter LogFile to value ""
+2025-10-11 22:06:12,485 - INFO - Set parameter Threads to value 12
+2025-10-11 22:06:12,485 - INFO - Set parameter TimeLimit to value 3600
+2025-10-11 22:06:12,486 - INFO - Set parameter OptimalityTol to value 0.0001
+2025-10-11 22:06:12,486 - INFO - Set parameter IntFeasTol to value 1e-05
+2025-10-11 22:06:12,486 - INFO - Set parameter StartNodeLimit to value 10000000
+2025-10-11 22:06:12,704 - INFO - Set parameter TimeLimit to value 3600
+2025-10-11 22:06:12,705 - INFO - 
+2025-10-11 22:06:12,705 - INFO - 
+2025-10-11 22:06:12,705 - INFO - Restarting solve
+2025-10-11 22:06:12,705 - INFO - 
+2025-10-11 22:06:12,705 - INFO - 
+2025-10-11 22:06:12,706 - INFO - Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (linux64 - "Ubuntu 20.04.6 LTS")
+2025-10-11 22:06:12,706 - INFO - 
+2025-10-11 22:06:12,706 - INFO - CPU model: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+2025-10-11 22:06:12,707 - INFO - Thread count: 48 physical cores, 96 logical processors, using up to 12 threads
+2025-10-11 22:06:12,707 - INFO - 
+2025-10-11 22:06:12,707 - INFO - Non-default parameters:
+2025-10-11 22:06:12,707 - INFO - TimeLimit  3600
+2025-10-11 22:06:12,707 - INFO - OptimalityTol  0.0001
+2025-10-11 22:06:12,707 - INFO - StartNodeLimit  10000000
+2025-10-11 22:06:12,707 - INFO - Threads  12
+2025-10-11 22:06:12,707 - INFO - 
+2025-10-11 22:06:12,707 - INFO - Optimize a model with 5603 rows, 3584 columns and 15200 nonzeros
+2025-10-11 22:06:12,707 - INFO - Model fingerprint: 0x0f76dcda
+2025-10-11 22:06:12,707 - INFO - Variable types: 1024 continuous, 2560 integer (2560 binary)
+2025-10-11 22:06:12,707 - INFO - Coefficient statistics:
+2025-10-11 22:06:12,707 - INFO -   Matrix range     [1e+00, 1e+15]
+2025-10-11 22:06:12,707 - INFO -   Objective range  [5e+04, 4e+05]
+2025-10-11 22:06:12,707 - INFO -   Bounds range     [1e+00, 1e+15]
+2025-10-11 22:06:12,707 - INFO -   RHS range        [1e+00, 1e+15]
+2025-10-11 22:06:12,707 - INFO - Warning: Model contains large matrix coefficient range
+2025-10-11 22:06:12,707 - INFO - Warning: Model contains large rhs
+2025-10-11 22:06:12,707 - INFO - Warning: Model contains large bounds
+2025-10-11 22:06:12,707 - INFO -          Consider reformulating model or setting NumericFocus parameter
+2025-10-11 22:06:12,708 - INFO -          to avoid numerical issues.
+2025-10-11 22:06:12,716 - INFO - Presolve removed 4281 rows and 1961 columns
+2025-10-11 22:06:12,716 - INFO - Presolve time: 0.01s
+2025-10-11 22:06:12,716 - INFO - 
+2025-10-11 22:06:12,716 - INFO - Explored 0 nodes (0 simplex iterations) in 0.01 seconds (0.01 work units)
+2025-10-11 22:06:12,716 - INFO - Thread count was 1 (of 96 available processors)
+2025-10-11 22:06:12,716 - INFO - 
+2025-10-11 22:06:12,716 - INFO - Solution count 0
+2025-10-11 22:06:12,716 - INFO - 
+2025-10-11 22:06:12,716 - INFO - Model is infeasible
+2025-10-11 22:06:12,716 - INFO - Best objective -, best bound -, gap -
+2025-10-11 22:06:12,716 - ERROR - Infeasible model, check constraints carefully. Insufficient memory?
+Traceback (most recent call last):
+  File "/data/user_lixiongfei/csl_hyc/solver/checkmate_solver.py", line 356, in solve_ilp_gurobi
+    solution = ilpsolver.solve()
+  File "/data/user_lixiongfei/csl_hyc/solver/checkmate_solver.py", line 268, in solve
+    raise ValueError("Infeasible model, check constraints carefully. Insufficient memory?")
+ValueError: Infeasible model, check constraints carefully. Insufficient memory?

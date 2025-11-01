@@ -1,0 +1,73 @@
+2025-10-12 10:05:10,288 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-12 10:05:24,702 - INFO - Epoch 1 completed in 14.430613 seconds
+2025-10-12 10:05:28,035 - INFO - torch.cuda.max_memory_reserved() : 2.0546875
+2025-10-12 10:05:41,950 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-10-12 10:05:41,950 - INFO - 总反向传播时间: 13.811295s
+2025-10-12 10:05:41,950 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-10-12 10:05:41,950 - INFO - A = 8.608084, B = 0.780186, b = 4.423024s
+2025-10-12 10:05:42,015 - INFO - ✅ 最优策略：[1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1]
+2025-10-12 10:05:42,015 - INFO - 📌 checkpoint 的欧氏长度:, [28, 57, 86, 115]
+2025-10-12 10:05:42,015 - INFO - 📌 checkpoint 的余弦长度:, [14]
+2025-10-12 10:05:42,015 - INFO - 💾 最终显存峰值：%.2f MB % 2586.457639650792
+2025-10-12 10:05:42,026 - INFO - Epoch 2 completed in 13.990032 seconds
+2025-10-12 10:05:42,026 - INFO - torch.cuda.max_memory_reserved() : 2.0546875
+2025-10-12 10:05:53,599 - INFO - Epoch 3 completed in 11.572687 seconds
+2025-10-12 10:05:53,599 - INFO - 
+====================== [第1个 Epoch 收集统计数据] ======================
+2025-10-12 10:05:53,599 - INFO - 
+🔍 EUCLIDEAN modules:
+2025-10-12 10:05:53,599 - INFO - [Shapelet  14] forward_avg=0.002422s over 66 calls | peak=183.81MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  28] forward_avg=0.002742s over 66 calls | peak=315.73MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  42] forward_avg=0.003218s over 66 calls | peak=412.87MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  57] forward_avg=0.003425s over 66 calls | peak=476.30MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  71] forward_avg=0.003544s over 66 calls | peak=499.81MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  86] forward_avg=0.003488s over 66 calls | peak=487.91MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet 100] forward_avg=0.003544s over 66 calls | peak=441.43MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet 115] forward_avg=0.003194s over 66 calls | peak=352.40MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - 
+🔍 COSINE modules:
+2025-10-12 10:05:53,600 - INFO - [Shapelet  14] forward_avg=0.002181s over 66 calls | peak=111.85MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  28] forward_avg=0.002039s over 66 calls | peak=195.99MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  42] forward_avg=0.002049s over 66 calls | peak=259.03MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  57] forward_avg=0.002103s over 66 calls | peak=298.59MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  71] forward_avg=0.002245s over 66 calls | peak=310.99MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet  86] forward_avg=0.002363s over 66 calls | peak=299.97MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet 100] forward_avg=0.002423s over 66 calls | peak=265.82MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - [Shapelet 115] forward_avg=0.002494s over 66 calls | peak=203.66MB | final=0.00MB
+2025-10-12 10:05:53,600 - INFO - 
+🔍 CROSS modules:
+2025-10-12 10:05:53,600 - INFO - [Shapelet  14] forward_avg=0.000560s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet  28] forward_avg=0.000522s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet  42] forward_avg=0.000589s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet  57] forward_avg=0.000675s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet  71] forward_avg=0.000760s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet  86] forward_avg=0.000846s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet 100] forward_avg=0.000932s over 66 calls
+2025-10-12 10:05:53,600 - INFO - [Shapelet 115] forward_avg=0.001026s over 66 calls
+2025-10-12 10:05:53,600 - INFO - 
+💾 模型第一次反向传播阶段的显存峰值（所有模块中的最大值）: 3077.16 MB
+2025-10-12 10:05:53,600 - INFO - 
+💾 模型初始显存: 91.00 MB
+2025-10-12 10:05:53,601 - INFO - =======================================================================
+
+2025-10-12 10:05:53,601 - INFO - torch.cuda.max_memory_reserved() : 4.1875
+2025-10-12 10:06:05,376 - INFO - Epoch 4 completed in 11.774744 seconds
+2025-10-12 10:06:05,376 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:06:17,136 - INFO - Epoch 5 completed in 11.759565 seconds
+2025-10-12 10:06:17,137 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:06:28,892 - INFO - Epoch 6 completed in 11.755050 seconds
+2025-10-12 10:06:28,893 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:06:40,729 - INFO - Epoch 7 completed in 11.835616 seconds
+2025-10-12 10:06:40,729 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:06:52,253 - INFO - Epoch 8 completed in 11.523559 seconds
+2025-10-12 10:06:52,253 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:07:03,964 - INFO - Epoch 9 completed in 11.709755 seconds
+2025-10-12 10:07:03,964 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:07:15,504 - INFO - Epoch 10 completed in 11.539480 seconds
+2025-10-12 10:07:18,604 - INFO - torch.cuda.max_memory_reserved() : 4.189453125
+2025-10-12 10:07:18,605 - INFO - !!!采用策略后的几个epoch 平均时间:11.68380719423294
+2025-10-12 10:07:18,605 - INFO - 
+
+
+

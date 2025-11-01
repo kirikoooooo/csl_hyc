@@ -1,0 +1,25 @@
+1. 关闭所有检查点的位置
+2. 为什么不全用检查点
+3. 看终端log 还是有 全局显存查看的服务
+4. 接下来测什么
+5. 指标'
+
+
+
+prof.step 记住
+
+export CUDA_VISIBLE_DEVICES=2
+python UEA.py DuckDuckGeese -lim=4 -de=4GB -b=8
+python UEA.py Cricket -lim=1 -de=1GB -b=8
+
+
+python monet/cvxpy_solver.py unet 4 4 inplace_newnode GUROBI --time_limit 100
+python monet/checkmate_solver.py unet 4 4
+
+
+docker run -it --gpus all -v /mnt/data/user_liangzhiyu/huyuchen:/app ubuntu:22.04 /bin/bash
+apt update
+apt install wget
+
+
+docker run -i -t --gpus all nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 -v /mnt/data/user_liangzhiyu/huyuchen:/root/App --name cudnn8_cuda118 /bin/bash

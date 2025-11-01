@@ -1,0 +1,11 @@
+2025-10-17 22:09:33,918 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-17 22:19:07,208 - INFO - Epoch 1 completed in 573.310345 seconds
+2025-10-17 22:22:05,619 - INFO - torch.cuda.max_memory_reserved() : 0.021484375
+2025-10-21 23:10:04,709 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-10-21 23:10:20,981 - INFO - Epoch 1 completed in 16.274598 seconds
+2025-10-21 23:12:14,225 - INFO - torch.cuda.max_memory_reserved() : 0.021484375
+2025-10-21 23:12:30,287 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-10-21 23:12:30,288 - INFO - 总反向传播时间: 15.851886s
+2025-10-21 23:12:30,288 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-10-21 23:12:30,288 - INFO - A = 10.665717, B = 0.870595, b = 4.315573s
