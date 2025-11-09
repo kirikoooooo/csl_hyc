@@ -446,13 +446,16 @@ class LearningShapeletsCL:
                 else:
                     pass
 
-
             if self.current_epoch== 1:
                 self.estimate_backward_time_bias()
+                # 估算时间
+                start = time.time()
                 if self.args.algo == "mimose":
                     self.plan_checkpoint_schedule_bucket()
                 else:
                     self.plan_checkpoint_schedule(algo = self.args.algo)
+                elapsed = time.time() - start
+                self.logger.info(f"🕒 显存计划规划时间: {elapsed:.2f} 秒")
 
 
 
