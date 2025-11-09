@@ -177,3 +177,40 @@ def solve_memory_budget(
     solution = [int(round(x_vars[i].X)) for i in range(len(x_vars))]
     return solution, model
 
+
+def _generate_inputs(seed: int = 0, tight: bool = False):
+    import random
+
+    random.seed(seed)
+    retained = [random.randint(40, 120) * 1024 * 1024 for _ in range(16)]
+    forward_peaks = [random.randint(200, 350) * 1024 * 1024 for _ in range(17)]
+    backward_peaks = [
+        int(forward_peaks[min(idx, len(forward_peaks) - 1)] * random.uniform(0.8, 1.2))
+        for idx in range(16)
+    ]
+
+    global_pre_forward_mem = forward_peaks[0] // 5
+    memory_budget = max(forward_peaks) + sum(retained) // 3
+    if tight:
+        memory_budget = global_pre_forward_mem + max(forward_peaks) // 2
+
+    return dict(
+        memory_budget=memory_budget,
+        global_pre_forward_mem=global_pre_forward_mem,
+        forward_peak_values=forward_peaks,
+        backward_peak_values=backward_peaks,
+        retained_activation_values=retained,
+    )
+
+
+def _run_example(description: str, tight: bool = False):
+    params = _generate_inputs(seed=42 if not tight else 24, tight=tight)
+    solution, _ = solve_memory_budget(**params)
+    kept = sum(solution)
+    print(f"[{description}] keep {kept}/16 activations -> {solution}")
+
+
+if __name__ == "__main__":
+    _run_example("Balanced budget", tight=False)
+    _run_example("Tight budget", tight=True)
+
