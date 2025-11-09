@@ -1,142 +1,89 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Mapping, Sequence, Tuple, Union
+from typing import Any, Callable, List, Sequence, Tuple
 
-from gurobipy import Constr, Model, Var, quicksum
-
-
-Number = Union[int, float]
+from gurobipy import GRB, Constr, Model, quicksum, tupledict
 
 
-def _as_ordered_var_list(x_vars: Union[Sequence[Var], Mapping, Iterable[Tuple[int, Var]]]) -> List[Var]:
-    """Convert different gurobipy container types to an ordered list of variables."""
-    if isinstance(x_vars, Mapping):
-        items = list(x_vars.items())
-        try:
-            items.sort(key=lambda item: item[0])
-        except TypeError:
-            pass
-        return [var for _, var in items]
-    if hasattr(x_vars, "items"):
-        items = list(x_vars.items())  # type: ignore[attr-defined]
-        try:
-            items.sort(key=lambda item: item[0])
-        except TypeError:
-            pass
-        return [var for _, var in items]
-    try:
-        return list(x_vars)  # type: ignore[arg-type]
-    except TypeError as exc:
-        raise TypeError("Unsupported container type for decision variables 'x_vars'.") from exc
+ForwardExprBuilder = Callable[[int, Sequence], Any]
+BackwardExprBuilder = Callable[[int, int, Sequence], Any]
+
+
+def _default_forward_expr(_: int, x_vars: Sequence) -> Any:
+    """Placeholder forward-stage k[t] expression."""
+    return quicksum(x_vars)
+
+
+def _default_backward_expr(_: int, __: int, x_vars: Sequence) -> Any:
+    """Placeholder backward-stage k[t] expression."""
+    return quicksum(x_vars)
 
 
 def add_memory_peak_constraints(
     model: Model,
-    x_vars: Union[Sequence[Var], Mapping],
-    forward_peak_mem: Sequence[Number],
-    backward_peak_mem: Sequence[Number],
-    retained_activation: Sequence[Number],
-    base_forward_mem: Number,
-    memory_budget: Number,
+    memory_budget: float,
     *,
+    forward_expr_builder: ForwardExprBuilder | None = None,
+    backward_expr_builder: BackwardExprBuilder | None = None,
+    forward_stages: int = 17,
+    backward_stages: int = 16,
     stage_offset: int = 1,
     constraint_prefix: str = "mem_peak",
-) -> List[Constr]:
+) -> Tuple[tupledict, List[Constr]]:
     """
-    Add the 33 memory budget constraints k[t] <= Mbudget for the MILP.
-
-    The function assumes:
-    - x_vars contains 16 decision variables x[i] (binary or continuous) indicating whether
-      the activation of module i is retained.
-    - forward_peak_mem provides the transient peak memory of each forward stage. Pass a
-      sequence of length 16 (one per module) or 17 if an additional post-forward stage
-      should be modelled. When only 16 values are supplied, an extra zero-valued stage is
-      appended automatically so that 33 constraints are generated.
-    - backward_peak_mem provides the estimated peak memory during the backward pass per
-      module, ordered the same way as x_vars.
-    - retained_activation holds the activation size that is kept if x[i] = 1 for each module.
+    Create binary checkpoint decisions x[i] and add 33 linear memory constraints.
 
     Parameters
     ----------
     model:
-        The gurobipy model to which the constraints are added.
-    x_vars:
-        Decision variables x[i] (length 16). Can be a list/tuple or a gurobipy tupledict.
-    forward_peak_mem:
-        Peak memory of the forward stages. Length should be len(x_vars) or len(x_vars) + 1.
-    backward_peak_mem:
-        Peak memory of backward stages (length len(x_vars)).
-    retained_activation:
-        Activation sizes that remain stored when a module is checkpointed (length len(x_vars)).
-    base_forward_mem:
-        The baseline memory usage before executing a forward stage (global_pre_forward_mem).
+        Gurobi model instance that already contains other problem variables.
     memory_budget:
-        The available memory budget Mbudget.
+        The constant right-hand side Mbudget used in every k[t] <= Mbudget constraint.
+    forward_expr_builder:
+        Callable that returns the linear expression for k[t] when t is in the forward phase.
+        Signature: f(stage_id:int, x_vars:Sequence[gurobipy.Var]) -> linear expression.
+        If omitted, a dummy linear form is used (simply sum(x)).
+    backward_expr_builder:
+        Callable that returns the linear expression for k[t] when t is in the backward phase.
+        Signature: f(stage_id:int, module_idx:int, x_vars:Sequence[gurobipy.Var]) -> expression,
+        where module_idx counts backward modules in reverse order (15 -> 0). If omitted a dummy
+        form sum(x) is used.
+    forward_stages:
+        Number of forward stages, default 17 (t = 1 ... 17).
+    backward_stages:
+        Number of backward stages, default 16 (t = 18 ... 33).
     stage_offset:
-        Optional offset for stage numbering in constraint names (default 1).
+        Optional offset for naming, default 1 so the first constraint is mem_peak_stage_1.
     constraint_prefix:
-        Prefix used when naming the generated constraints.
+        Name prefix for the generated constraints.
 
     Returns
     -------
-    List[Constr]
-        The list of gurobipy constraints added to the model.
+    tupledict, List[Constr]
+        - The tupledict of binary decision variables x[i].
+        - A list with all generated gurobipy constraints.
     """
-    x_list = _as_ordered_var_list(x_vars)
-    num_modules = len(x_list)
+    forward_expr_builder = forward_expr_builder or _default_forward_expr
+    backward_expr_builder = backward_expr_builder or _default_backward_expr
 
-    if len(retained_activation) != num_modules:
-        raise ValueError(
-            f"retained_activation length ({len(retained_activation)}) "
-            f"must match number of decision variables ({num_modules})."
-        )
-    if len(backward_peak_mem) != num_modules:
-        raise ValueError(
-            f"backward_peak_mem length ({len(backward_peak_mem)}) "
-            f"must match number of decision variables ({num_modules})."
-        )
-    if len(forward_peak_mem) not in (num_modules, num_modules + 1):
-        raise ValueError(
-            "forward_peak_mem length must be either equal to the number of decision "
-            "variables or exactly one greater to account for an additional forward stage."
-        )
-
-    if len(forward_peak_mem) == num_modules:
-        forward_peaks = list(forward_peak_mem) + [0]
-    else:
-        forward_peaks = list(forward_peak_mem)
-    backward_peaks = list(backward_peak_mem)
-    retained = list(retained_activation)
+    x_vars = model.addVars(backward_stages, vtype=GRB.BINARY, name="x")
+    ordered_x: List = [x_vars[i] for i in range(backward_stages)]
 
     constraints: List[Constr] = []
-    stage_idx = stage_offset
-    cumulative_final = 0
+    stage_id = stage_offset
 
-    # Forward stages (t = 1 ... 17)
-    for module_idx, forward_peak in enumerate(forward_peaks):
-        if module_idx < num_modules:
-            cumulative_final += x_list[module_idx] * retained[module_idx]
-        k_expr = base_forward_mem + forward_peak + cumulative_final
-        constr = model.addConstr(
-            k_expr <= memory_budget,
-            name=f"{constraint_prefix}_stage_{stage_idx}",
-        )
+    for local_stage in range(forward_stages):
+        k_expr = forward_expr_builder(stage_id, ordered_x)
+        constr = model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         constraints.append(constr)
-        stage_idx += 1
+        stage_id += 1
 
-    total_final = quicksum(x_list[i] * retained[i] for i in range(num_modules))
-    cumulative_release = 0
-
-    # Backward stages (t = 18 ... 33)
-    for module_idx in range(num_modules - 1, -1, -1):
-        k_expr = backward_peaks[module_idx] + total_final - cumulative_release
-        constr = model.addConstr(
-            k_expr <= memory_budget,
-            name=f"{constraint_prefix}_stage_{stage_idx}",
-        )
+    for local_stage in range(backward_stages):
+        module_idx = backward_stages - 1 - local_stage
+        k_expr = backward_expr_builder(stage_id, module_idx, ordered_x)
+        constr = model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         constraints.append(constr)
-        stage_idx += 1
-        cumulative_release += x_list[module_idx] * retained[module_idx]
+        stage_id += 1
 
-    return constraints
+    return x_vars, constraints
 
