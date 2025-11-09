@@ -2,23 +2,25 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional, Sequence, Tuple
 
-from gurobipy import GRB, Constr, LinExpr, Model, quicksum, tupledict
+from gurobipy import GRB, Constr, Model, quicksum, tupledict
 
 
 def add_memory_peak_constraints(
     model: Model,
     *,
     memory_budget: float,
-    global_pre_forward_mem: float,
-    forward_peak_values: Sequence[float],
-    backward_peak_values: Sequence[float],
-    retained_activation_values: Sequence[float],
+    forward_coeffs: Sequence[float],
+    backward_coeffs: Sequence[float],
     x_vars: tupledict | None = None,
-    stage_offset: int = 1,
     constraint_prefix: str = "mem_peak",
 ) -> Tuple[tupledict, List[Constr]]:
     """
-    Add the 33 linear constraints k[t] <= memory_budget with binary decisions x[i].
+    Add the 32 simplified linear constraints k[t] <= memory_budget along with binary x[i].
+
+    Each constraint currently uses the placeholder
+        k[t] = coeff[t] * x[i]
+    so that x[i] directly controls whether the stage consumes memory. You can later replace
+    the placeholder with a more accurate expression.
 
     Parameters
     ----------
@@ -26,83 +28,41 @@ def add_memory_peak_constraints(
         Gurobi model instance.
     memory_budget:
         Memory limit Mbudget.
-    global_pre_forward_mem:
-        Global baseline memory before each forward stage.
-    forward_peak_values:
-        Sequence giving get_peak_mem(t) for forward stages (expected length 17).
-    backward_peak_values:
-        Sequence giving get_backward_peak(i) for backward stages (expected length 16).
-    retained_activation_values:
-        Sequence giving the retained activation size for each module i (length 16).
+    forward_coeffs:
+        16 coefficients describing the forward stages.
+    backward_coeffs:
+        16 coefficients describing the backward stages.
     x_vars:
-        Optional existing tupledict of binary decision variables x[i]; created if None.
-    stage_offset:
-        Starting index used when naming constraints.
+        Optional existing tupledict/list of binary decision variables. Created when None.
     constraint_prefix:
-        Prefix for the constraint names.
+        Prefix for the generated constraint names.
 
     Returns
     -------
     tupledict, List[Constr]
-        - Binary decision variables x[i].
-        - The list of generated constraints.
+        - Binary variables x[i].
+        - List of the 32 added constraints.
     """
-    num_modules = len(retained_activation_values)
-    if len(backward_peak_values) != num_modules:
-        raise ValueError("backward_peak_values length must match retained_activation_values length.")
+    num_modules = len(forward_coeffs)
+    if len(backward_coeffs) != num_modules:
+        raise ValueError("forward_coeffs and backward_coeffs must have the same length (16).")
 
     if x_vars is None:
         x_vars = model.addVars(num_modules, vtype=GRB.BINARY, name="x")
     elif len(x_vars) != num_modules:
-        raise ValueError("Provided x_vars length does not match retained_activation_values length.")
+        raise ValueError("Provided x_vars length does not match number of modules.")
 
-    forward_peaks = list(forward_peak_values)
-    backward_peaks = list(backward_peak_values)
-    forward_stage_count = len(forward_peaks)
-    backward_stage_count = len(backward_peaks)
-    if forward_stage_count + backward_stage_count == 32:
-        forward_peaks.append(0.0)
-        forward_stage_count += 1
-    if forward_stage_count + backward_stage_count != 33:
-        raise ValueError("Expected 33 stages in total (forward + backward).")
-
-    ordered_x = [x_vars[i] for i in range(num_modules)]
     constraints: List[Constr] = []
-    stage_id = stage_offset
 
-    def get_peak_mem(stage: int) -> float:
-        return forward_peaks[stage - 1]
+    for idx in range(num_modules):
+        k_forward = forward_coeffs[idx] * x_vars[idx]
+        constr = model.addConstr(k_forward <= memory_budget, name=f"{constraint_prefix}_f_{idx + 1}")
+        constraints.append(constr)
 
-    def get_backward_peak(module_idx: int) -> float:
-        return backward_peaks[module_idx - 1]
-
-    def get_final_mem(module_idx: int) -> LinExpr:
-        return ordered_x[module_idx - 1] * retained_activation_values[module_idx - 1]
-
-    def get_release(module_idx: int) -> LinExpr:
-        return ordered_x[module_idx - 1] * retained_activation_values[module_idx - 1]
-
-    cum_final_expr: LinExpr = LinExpr()
-    for t in range(1, forward_stage_count + 1):
-        k_expr = global_pre_forward_mem + get_peak_mem(t) + cum_final_expr
-        constraints.append(
-            model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
-        )
-        stage_id += 1
-        if t <= num_modules:
-            cum_final_expr += get_final_mem(t)
-
-    total_final_expr = quicksum(get_final_mem(i + 1) for i in range(num_modules))
-    cum_release_expr: LinExpr = LinExpr()
-
-    for local_stage in range(backward_stage_count):
-        module_idx = num_modules - local_stage
-        k_expr = get_backward_peak(module_idx) + total_final_expr - cum_release_expr
-        constraints.append(
-            model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
-        )
-        stage_id += 1
-        cum_release_expr += get_release(module_idx)
+    for idx in range(num_modules):
+        k_backward = backward_coeffs[idx] * x_vars[idx]
+        constr = model.addConstr(k_backward <= memory_budget, name=f"{constraint_prefix}_b_{idx + 1}")
+        constraints.append(constr)
 
     return x_vars, constraints
 
@@ -110,40 +70,18 @@ def add_memory_peak_constraints(
 def solve_memory_budget(
     *,
     memory_budget: float,
-    global_pre_forward_mem: float,
-    forward_peak_values: Sequence[float],
-    backward_peak_values: Sequence[float],
-    retained_activation_values: Sequence[float],
+    forward_coeffs: Sequence[float],
+    backward_coeffs: Sequence[float],
     objective_weights: Optional[Iterable[float]] = None,
     time_limit: Optional[float] = None,
     model_name: str = "memory_budget",
     constraint_prefix: str = "mem_peak",
 ):
     """
-    Convenience wrapper that builds and solves the MILP for the checkpoint decisions x[i].
+    Convenience wrapper that builds and solves the simplified checkpoint MILP.
 
-    Parameters
-    ----------
-    memory_budget:
-        Memory limit Mbudget.
-    global_pre_forward_mem:
-        Global baseline memory before each forward stage.
-    forward_peak_values / backward_peak_values / retained_activation_values:
-        Same semantics as in add_memory_peak_constraints.
-    objective_weights:
-        Optional weights to penalise keeping activations. If omitted, minimise sum(x).
-    time_limit:
-        Optional solver time limit (seconds).
-    model_name:
-        Name of the gurobipy model.
-    constraint_prefix:
-        Prefix used for naming the 33 constraints.
-
-    Returns
-    -------
-    Tuple[List[int], Model]
-        - Binary solution vector x[i] (rounded to {0,1}).
-        - The solved gurobipy model instance (for further inspection).
+    With the placeholder formulation the objective defaults to minimising ∑x[i]; override
+    objective_weights if you prefer another linear objective.
     """
     model = Model(model_name)
     if time_limit is not None:
@@ -152,11 +90,8 @@ def solve_memory_budget(
     x_vars, _ = add_memory_peak_constraints(
         model,
         memory_budget=memory_budget,
-        global_pre_forward_mem=global_pre_forward_mem,
-        forward_peak_values=forward_peak_values,
-        backward_peak_values=backward_peak_values,
-        retained_activation_values=retained_activation_values,
-        stage_offset=1,
+        forward_coeffs=forward_coeffs,
+        backward_coeffs=backward_coeffs,
         constraint_prefix=constraint_prefix,
     )
 
@@ -182,28 +117,22 @@ def _generate_inputs(seed: int = 0, tight: bool = False):
     import random
 
     random.seed(seed)
-    retained = [random.randint(40, 120) * 1024 * 1024 for _ in range(16)]
-    forward_peaks = [random.randint(200, 350) * 1024 * 1024 for _ in range(17)]
-    backward_peaks = [
-        int(forward_peaks[min(idx, len(forward_peaks) - 1)] * random.uniform(0.8, 1.2))
-        for idx in range(16)
+    forward_coeffs = [random.randint(200, 350) * 1024 * 1024 for _ in range(16)]
+    backward_coeffs = [
+        max(int(forward_coeffs[idx] * random.uniform(0.8, 1.1)), 1) for idx in range(16)
     ]
 
-    global_pre_forward_mem = forward_peaks[0] // 5
-    memory_budget = max(forward_peaks) + sum(retained) // 3
-    if tight:
-        memory_budget = global_pre_forward_mem + max(forward_peaks) // 2
+    baseline_budget = max(forward_coeffs + backward_coeffs)
+    memory_budget = baseline_budget * (2 if not tight else 1)
 
     return dict(
         memory_budget=memory_budget,
-        global_pre_forward_mem=global_pre_forward_mem,
-        forward_peak_values=forward_peaks,
-        backward_peak_values=backward_peaks,
-        retained_activation_values=retained,
+        forward_coeffs=forward_coeffs,
+        backward_coeffs=backward_coeffs,
     )
 
 
-def _run_example(description: str, tight: bool = False, objective_weights=None):
+def _run_example(description: str, *, tight: bool = False, objective_weights=None):
     params = _generate_inputs(seed=42 if not tight else 24, tight=tight)
     if objective_weights is not None:
         params["objective_weights"] = objective_weights
@@ -213,6 +142,7 @@ def _run_example(description: str, tight: bool = False, objective_weights=None):
 
 
 if __name__ == "__main__":
+    _run_example("Balanced budget (minimise keeps)", tight=False)
     _run_example("Balanced budget (maximise keeps)", tight=False, objective_weights=[-1.0] * 16)
     _run_example("Tight budget", tight=True)
 
