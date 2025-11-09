@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from gurobipy import GRB, Constr, LinExpr, Model, quicksum, tupledict
 
@@ -105,4 +105,75 @@ def add_memory_peak_constraints(
         cum_release_expr += get_release(module_idx)
 
     return x_vars, constraints
+
+
+def solve_memory_budget(
+    *,
+    memory_budget: float,
+    global_pre_forward_mem: float,
+    forward_peak_values: Sequence[float],
+    backward_peak_values: Sequence[float],
+    retained_activation_values: Sequence[float],
+    objective_weights: Optional[Iterable[float]] = None,
+    time_limit: Optional[float] = None,
+    model_name: str = "memory_budget",
+    constraint_prefix: str = "mem_peak",
+):
+    """
+    Convenience wrapper that builds and solves the MILP for the checkpoint decisions x[i].
+
+    Parameters
+    ----------
+    memory_budget:
+        Memory limit Mbudget.
+    global_pre_forward_mem:
+        Global baseline memory before each forward stage.
+    forward_peak_values / backward_peak_values / retained_activation_values:
+        Same semantics as in add_memory_peak_constraints.
+    objective_weights:
+        Optional weights to penalise keeping activations. If omitted, minimise sum(x).
+    time_limit:
+        Optional solver time limit (seconds).
+    model_name:
+        Name of the gurobipy model.
+    constraint_prefix:
+        Prefix used for naming the 33 constraints.
+
+    Returns
+    -------
+    Tuple[List[int], Model]
+        - Binary solution vector x[i] (rounded to {0,1}).
+        - The solved gurobipy model instance (for further inspection).
+    """
+    model = Model(model_name)
+    if time_limit is not None:
+        model.setParam(GRB.Param.TimeLimit, time_limit)
+
+    x_vars, _ = add_memory_peak_constraints(
+        model,
+        memory_budget=memory_budget,
+        global_pre_forward_mem=global_pre_forward_mem,
+        forward_peak_values=forward_peak_values,
+        backward_peak_values=backward_peak_values,
+        retained_activation_values=retained_activation_values,
+        stage_offset=1,
+        constraint_prefix=constraint_prefix,
+    )
+
+    if objective_weights is None:
+        objective = quicksum(x_vars[i] for i in range(len(x_vars)))
+    else:
+        weights = list(objective_weights)
+        if len(weights) != len(x_vars):
+            raise ValueError("objective_weights must have the same length as x_vars.")
+        objective = quicksum(weights[i] * x_vars[i] for i in range(len(x_vars)))
+
+    model.setObjective(objective, GRB.MINIMIZE)
+    model.optimize()
+
+    if model.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
+        raise ValueError("Memory budget model is infeasible.")
+
+    solution = [int(round(x_vars[i].X)) for i in range(len(x_vars))]
+    return solution, model
 
