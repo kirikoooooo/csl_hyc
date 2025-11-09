@@ -203,14 +203,16 @@ def _generate_inputs(seed: int = 0, tight: bool = False):
     )
 
 
-def _run_example(description: str, tight: bool = False):
+def _run_example(description: str, tight: bool = False, objective_weights=None):
     params = _generate_inputs(seed=42 if not tight else 24, tight=tight)
+    if objective_weights is not None:
+        params["objective_weights"] = objective_weights
     solution, _ = solve_memory_budget(**params)
     kept = sum(solution)
     print(f"[{description}] keep {kept}/16 activations -> {solution}")
 
 
 if __name__ == "__main__":
-    _run_example("Balanced budget", tight=False)
+    _run_example("Balanced budget (maximise keeps)", tight=False, objective_weights=[-1.0] * 16)
     _run_example("Tight budget", tight=True)
 
