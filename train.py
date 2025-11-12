@@ -17,6 +17,7 @@ from sko.GA import GA
 from KGA import *
 from solver.checkmate_solver import *
 from solver.monet_solver import *
+from solver.ours_solver import *
 def print_cuda_memory(tag=""):
     allocated = torch.cuda.memory_allocated() / 1024 ** 2  # MB
     reserved = torch.cuda.memory_reserved() / 1024 ** 2
@@ -536,7 +537,7 @@ class LearningShapeletsCL:
         def get_length(i):
             return shapelet_lengths[(i - 1) % 8]
 
-        # get_peak_mem(i): 获取第 `i` 个阶段的峰值内存
+        # get_peak_mem(i): 获取第 `i` 个MODULE FORWARD的峰值内存
         def get_peak_mem(i):
             return get_S_e(get_length(i)) if is_E(i) else get_S_c(get_length(i))
 
@@ -648,6 +649,45 @@ class LearningShapeletsCL:
             )
             z_best, best_y = ga.run()
 
+        if algo == "oursILP":
+
+            forward_peak_values = []
+            backward_peak_values = []
+            retain = []
+            for i in range(1, 17):
+                forward_peak_values.append(get_peak_mem(i))
+                backward_peak_values.append(get_backward_peak(i))
+                retain.append(get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i)))
+
+            # print(memory_limit/1024/1024)
+            # print(global_pre_forward_mem/1024/1024)
+            # print(retain[0]/1024/1024)
+            # print(len(retain))
+            # print(len(backward_peak_values))
+            # print(len(forward_peak_values))
+            # for i in range(len(forward_peak_values)):
+            #     print(f"forward peak {i}: {forward_peak_values[i]/1024/1024} MB")
+            #     print(f"backward peak {i}: {backward_peak_values[i]/1024/1024} MB")
+            #     print(f"retain {i}: {retain[i]/1024/1024} MB")
+            solution, _ = solve_memory_budget(
+                memory_budget=memory_limit,
+                forward_peak_values=forward_peak_values,
+                backward_peak_values=backward_peak_values,
+                retained_activation_values=retain,
+                global_pre_forward_mem=global_pre_forward_mem,
+                objective_weights=[-1.0] * 16,
+                shapelet_lengths=shapelet_lengths,
+                T_cosine=T_cosine,
+                T_euclidean=T_euclidean,
+                T_cross=T_cross,
+                b=b
+            )
+            kept = sum(solution)
+            print(f" keep {kept}/16 activations -> {solution}")
+            z_best = np.array(solution)
+            for i in range(16):
+                x[i + 1] = int(z_best[i])
+                x[i + 17] = int(z_best[i])
 
 
 

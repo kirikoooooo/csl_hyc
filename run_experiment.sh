@@ -22,18 +22,19 @@ echo "Starting experiments..."
 # python UEA.py Cricket -lim=16 -de=16GB -b=64 -logdir=cricket_logs_monet -algo=monet|| echo "⚠️ Failed: Cricket -lim=2.5"
 # python UEA.py Cricket -lim=18 -de=18GB -b=64 -logdir=cricket_logs_monet -algo=monet|| echo "⚠️ Failed: Cricket -lim=3"
 
- #python UEA.py Cricket -lim=18 -de=18GB -b=64  -logdir=./ -algo=monet|| echo "⚠️ Failed: Cricket -lim=3"
+ #python UEA.py Cricket -lim=18 -de=18GB -b=64  -logdir=./ -algo=oursILP|| echo "⚠️ Failed: Cricket -lim=3"
 # 定义算法列表
-algos=("monet" "checkmate" "diff" "ga" "mimose")
+#algos=("monet" "checkmate" "diff" "ga" "mimose")
+algos=("oursILP")
 # 定义 lim 值（de 与 lim 数值相同，单位 GB）
-lim_values=(0.5 0.75 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0)
-
+#lim_values=(0.5 0.75 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0)
+lim_values=(5 6 7 8 9 10 11 12 13 14 15)
 # 遍历每个算法
 for algo in "${algos[@]}"; do
     logdir="cricket_logs_${algo}"
     for lim in "${lim_values[@]}"; do
         de="${lim}GB"
-        cmd="python UEA.py Cricket -lim=${lim} -de=${de}bs8_None -b=8 -logdir=${logdir} -algo=${algo}"
+        cmd="python UEA.py Cricket -lim=${lim} -de=${algo}_lim2dim2_bs8_${de} -b=8 -logdir=${logdir} -algo=${algo}"
         fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${lim}"
         eval "$cmd" || echo "$fail_msg"
     done
