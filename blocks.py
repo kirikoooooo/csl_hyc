@@ -10,6 +10,13 @@ from utils import generate_binomial_mask
 import logs
 
 
+def _calc_parameter_memory_bytes(module: nn.Module) -> int:
+    total = 0
+    for param in module.parameters(recurse=True):
+        total += param.numel() * param.element_size()
+    return total
+
+
 class MinEuclideanDistBlock(nn.Module):
 
     def __init__(self, shapelets_size, num_shapelets, in_channels=1, to_cuda=True, checkpoint=False):
@@ -276,6 +283,8 @@ class ShapeletsDistBlocks(nn.Module):
         else:
             raise ValueError("dist_measure must be either of 'euclidean', 'cross-correlation', 'cosine'")
 
+        self._record_parameter_memory()
+
     def forward(self, x, masking=False):
 
         out = torch.tensor([], dtype=torch.float).cuda() if self.to_cuda else torch.tensor([], dtype=torch.float)
@@ -297,6 +306,30 @@ class ShapeletsDistBlocks(nn.Module):
                 out = torch.cat((out, block(x, masking)), dim=2)
 
         return out
+
+    def _record_parameter_memory(self):
+        lengths = list(self.shapelets_size_and_len.keys())
+        if not lengths:
+            return
+
+        for idx, block in enumerate(self.blocks):
+            if isinstance(block, MinEuclideanDistBlock):
+                mem_key = "euclidean"
+            elif isinstance(block, MaxCosineSimilarityBlock):
+                mem_key = "cosine"
+            elif isinstance(block, MaxCrossCorrelationBlock):
+                mem_key = "cross"
+            else:
+                continue
+
+            if self.dist_measure == 'mix':
+                length_idx = min(idx // 3, len(lengths) - 1)
+            else:
+                length_idx = min(idx, len(lengths) - 1)
+
+            shapelets_size = lengths[length_idx]
+            memory_bytes = _calc_parameter_memory_bytes(block)
+            logs.block_param_memory_by_type[mem_key][shapelets_size] = memory_bytes
 
 
 class LearningShapeletsModel(nn.Module):

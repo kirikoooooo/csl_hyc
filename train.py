@@ -81,6 +81,14 @@ class LearningShapeletsCL:
         self.is_ddp = is_ddp
         self.checkpoint = checkpoint
         self.seed = seed
+
+        # 重置参数显存统计，确保后续构建的模块会重新登记参数显存
+        logs.block_param_memory_by_type["euclidean"].clear()
+        logs.block_param_memory_by_type["cosine"].clear()
+        logs.block_param_memory_by_type["cross"].clear()
+        logs.model_param_memory_bytes = 0
+        logs.model_param_count = 0
+
         if dist_measure == 'mix':
             self.model = LearningShapeletsModelMixDistances(shapelets_size_and_len=shapelets_size_and_len,
                                                             in_channels=in_channels, num_classes=num_classes,
@@ -154,6 +162,36 @@ class LearningShapeletsCL:
             ]
         )
         self.logger = logging.getLogger(__name__)
+        self._record_parameter_memory_stats()
+
+    def _record_parameter_memory_stats(self):
+        if not hasattr(self, "model"):
+            return
+
+        total_bytes = 0
+        total_params = 0
+        for param in self.model.parameters():
+            total_bytes += param.numel() * param.element_size()
+            total_params += param.numel()
+
+        logs.model_param_memory_bytes = total_bytes
+        logs.model_param_count = total_params
+
+        logger = getattr(self, "logger", None)
+        if logger is None:
+            return
+
+        logger.info("🧮 参数显存统计（单位：MB）")
+
+        for dist_type in ("euclidean", "cosine"):
+            if not logs.block_param_memory_by_type[dist_type]:
+                continue
+            type_total = sum(logs.block_param_memory_by_type[dist_type].values())
+            logger.info(f"[参数显存] {dist_type} 总计: {type_total / 1024 ** 2:.4f} MB")
+            for length, mem in sorted(logs.block_param_memory_by_type[dist_type].items()):
+                logger.info(f"[参数显存] {dist_type} 长度={length}: {mem / 1024 ** 2:.4f} MB")
+
+        logger.info(f"[参数显存] 模型参数总量: {total_params:,}，显存: {total_bytes / 1024 ** 2:.4f} MB")
 
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer
