@@ -657,11 +657,17 @@ class LearningShapeletsCL:
             for i in range(1, 17):
                 forward_peak_values.append(get_peak_mem(i))
                 backward_peak_values.append(get_backward_peak(i))
-                retain.append(get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i)))
+                retain_value = get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i))
+                retain.append(retain_value)
 
-            # print(memory_limit/1024/1024)
-            # print(global_pre_forward_mem/1024/1024)
-            # print(retain[0]/1024/1024)
+
+
+            print(memory_limit/1024/1024)
+            print(global_pre_forward_mem/1024/1024)
+            print(retain[0]/1024/1024)
+            print(forward_peak_values[0]/1024/1024)
+            print(backward_peak_values[0]/1024/1024)
+            # exit(0)
             # print(len(retain))
             # print(len(backward_peak_values))
             # print(len(forward_peak_values))
@@ -675,7 +681,7 @@ class LearningShapeletsCL:
                 backward_peak_values=backward_peak_values,
                 retained_activation_values=retain,
                 global_pre_forward_mem=global_pre_forward_mem,
-                objective_weights=[-1.0] * 16,
+                objective_weights=[],
                 shapelet_lengths=shapelet_lengths,
                 T_cosine=T_cosine,
                 T_euclidean=T_euclidean,
@@ -689,7 +695,18 @@ class LearningShapeletsCL:
                 x[i + 1] = int(z_best[i])
                 x[i + 17] = int(z_best[i])
 
+        #验证规划前后显存存储结果
+        plan_mem = float(memory_limit)/float(1024**3)
+        # 根据 z_best 计算存储结果
+        real_mem = 0.0
+        for i in range(0,16):
+            if z_best[i] == 1:
+                block_MEM = get_M_e(get_length(i+1)) if is_E(i+1) else get_M_c(get_length(i+1))
+                real_mem += block_MEM
+                print(f"模块 {i+1}  save checkpoint，显存 {block_MEM/1024/1024} MB")
 
+        self.logger.info(f"规划前的显存GB：{plan_mem}")
+        self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
 
         self.logger.info(f"✅ 最优策略：{z_best.tolist()}")
         all_lengths = list(self.shapelets_size_and_len.keys())

@@ -77,32 +77,64 @@ def add_memory_peak_constraints(
         return backward_peaks[module_idx - 1]
 
     def get_final_mem(module_idx: int) -> LinExpr:
-        return ordered_x[module_idx - 1] * retained_activation_values[module_idx - 1]
+        return x_vars[module_idx - 1] * retained_activation_values[module_idx - 1]
 
     def get_release(module_idx: int) -> LinExpr:
-        return ordered_x[module_idx - 1] * retained_activation_values[module_idx - 1]
+        return retained_activation_values[module_idx - 1] * (1 - x_vars[module_idx - 1])
 
     cum_final_expr: LinExpr = LinExpr()
-    for t in range(1, forward_stage_count + 1):
-        k_expr = global_pre_forward_mem + get_peak_mem(t) + cum_final_expr
+    for t in range(1, 33):
+        if t > 16:
+            m = t-16
+        else:
+            m = t
+
+        k_expr = global_pre_forward_mem + get_peak_mem(m) + cum_final_expr
+
         constraints.append(
             model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         )
         stage_id += 1
-        if t <= num_modules:
-            cum_final_expr += get_final_mem(t)
+        cum_final_expr += get_final_mem(m)
 
-    total_final_expr = quicksum(get_final_mem(i + 1) for i in range(num_modules))
+
+    # 前向结束时峰值
+    total_final_expr =2 * sum(get_final_mem(i)*(x_vars[i-1]) for i in range(1,17)) + global_pre_forward_mem
+    # constraints.append(
+    #     model.addConstr(total_final_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
+    # )
+    # stage_id += 1
+
+
+    # total_final_cum = sum(get_final_mem(i) for i in range(1,17))
     cum_release_expr: LinExpr = LinExpr()
 
-    for local_stage in range(backward_stage_count):
-        module_idx = num_modules - local_stage
-        k_expr = get_backward_peak(module_idx) + total_final_expr - cum_release_expr
+    for t in range(1,33):
+        if t > 16:
+            m = t-16
+        else:
+            m = t
+        k_expr = get_backward_peak(m) + total_final_expr - cum_release_expr
         constraints.append(
             model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         )
         stage_id += 1
-        cum_release_expr += get_release(module_idx)
+        cum_release_expr += get_release(m)
+
+
+    # 重计算约束
+    for t in range(1,33):
+        if t > 16:
+            m = t-16
+        else:
+            m = t
+        k_expr = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + get_final_mem(m) * x_vars[m-1] + global_pre_forward_mem
+
+        constraints.append(
+            model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
+        )
+        stage_id += 1
+
 
     return x_vars, constraints
 
@@ -191,14 +223,14 @@ def solve_memory_budget(
         # 因为 T_ckp 和 T_nockp 现在是 Gurobi 表达式 (LinExpr),
         # total_time 也会自动成为一个 LinExpr
         T_cross_total = sum(T_cross)
-        total_time = 48 * (3 * T_ckp + 2 * T_nockp + 2 * T_cross_total) + b
+        total_time = 48 * (3000 * T_ckp  + 2 * T_cross_total) + b
         objective = total_time
     else:
-        weights = list(objective_weights)
-        if len(weights) != len(x_vars):
-            raise ValueError("objective_weights must have the same length as x_vars.")
-        objective = quicksum(weights[i] * x_vars[i] for i in range(len(x_vars)))
-
+        # weights = list(objective_weights)
+        # if len(weights) != len(x_vars):
+        #     raise ValueError("objective_weights must have the same length as x_vars.")
+        # objective = quicksum(weights[i] * x_vars[i] for i in range(len(x_vars)))
+        objective = -quicksum(x_vars[i] for i in range(len(x_vars)))  # Minimise sum of kept activations
     model.setObjective(objective, GRB.MINIMIZE)
     model.optimize()
 
