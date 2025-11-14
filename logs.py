@@ -4,6 +4,17 @@ block_forward_stats_by_type = {
     "cross": {}
 }
 
+# 记录各类模块参数显存 (单位：Byte)
+block_param_memory_by_type = {
+    "euclidean": {},
+    "cosine": {},
+    "cross": {}
+}
+
+# 记录模型参数总显存及参数量
+model_param_memory_bytes = 0
+model_param_count = 0
+
 # 记录全局反向传播峰值显存
 global_backward_peak_mem = 0
 
