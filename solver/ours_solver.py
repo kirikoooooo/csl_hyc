@@ -100,10 +100,10 @@ def add_memory_peak_constraints(
 
     # 前向结束时峰值
     total_final_expr =2 * sum(get_final_mem(i)*(x_vars[i-1]) for i in range(1,17)) + global_pre_forward_mem
-    # constraints.append(
-    #     model.addConstr(total_final_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
-    # )
-    # stage_id += 1
+    constraints.append(
+        model.addConstr(total_final_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
+    )
+    stage_id += 1
 
 
     # total_final_cum = sum(get_final_mem(i) for i in range(1,17))
@@ -114,26 +114,37 @@ def add_memory_peak_constraints(
             m = t-16
         else:
             m = t
+        # 反向传播
         k_expr = get_backward_peak(m) + total_final_expr - cum_release_expr
+
+        # 重计算
+        k_expr2 = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + global_pre_forward_mem + total_final_expr - cum_release_expr
+
+        #k_expr = (1-x_vars[m])*k_expr2 + x_vars[m]*k_expr
         constraints.append(
             model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
+        )
+        constraints.append(
+            model.addConstr(k_expr2 <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         )
         stage_id += 1
         cum_release_expr += get_release(m)
 
+    # total_final_expr2 = total_final_expr
+    # # 重计算约束
+    # for t in range(1,33):
+    #     if t > 16:
+    #         m = t-16
+    #     else:
+    #         m = t
 
-    # 重计算约束
-    for t in range(1,33):
-        if t > 16:
-            m = t-16
-        else:
-            m = t
-        k_expr = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + get_final_mem(m) * x_vars[m-1] + global_pre_forward_mem
+    #     # 重计算峰值，反向传播+正向计算[没存的]+还剩的激活+模型初始显存
+    #     k_expr = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + global_pre_forward_mem
 
-        constraints.append(
-            model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
-        )
-        stage_id += 1
+    #     constraints.append(
+    #         model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
+    #     )
+    #     stage_id += 1
 
 
     return x_vars, constraints

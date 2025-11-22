@@ -99,7 +99,8 @@ if __name__ == "__main__":
         "cricket_logs_ga",
         "cricket_logs_checkmate",
         "cricket_logs_monet",
-        "cricket_logs_mimose"
+        "cricket_logs_mimose",
+        "cricket_logs_oursILP"
     ]
 
     merge_experiment_results(

@@ -8,7 +8,7 @@
 
 prof.step 记住
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 python UEA.py DuckDuckGeese -lim=4 -de=4GB -b=8
 python UEA.py Cricket -lim=1 -de=1GB -b=8
 

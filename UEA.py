@@ -103,15 +103,15 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
     X_train = z_normalize(X_train)
     X_test = z_normalize(X_test)
 
-    # # ========= 在此处插入：时间长度与通道数翻倍 =========
-    # # 时间长度翻倍（时间轴 axis=2 拼接自身）
-    X_train = np.concatenate([X_train, X_train], axis=2)
-    X_test  = np.concatenate([X_test,  X_test],  axis=2)
+    # # # ========= 在此处插入：时间长度与通道数翻倍 =========
+    # # # 时间长度翻倍（时间轴 axis=2 拼接自身）
+    # X_train = np.concatenate([X_train, X_train], axis=2)
+    # X_test  = np.concatenate([X_test,  X_test],  axis=2)
 
-    # 通道数翻倍（通道轴 axis=1 复制自身）
-    X_train = np.concatenate([X_train, X_train], axis=1)
-    X_test  = np.concatenate([X_test,  X_test],  axis=1)
-    # # ==============================================
+    # # 通道数翻倍（通道轴 axis=1 复制自身）
+    # X_train = np.concatenate([X_train, X_train], axis=1)
+    # X_test  = np.concatenate([X_test,  X_test],  axis=1)
+    # # # ==============================================
 
     if resize > 0:
         X_train = tsaug.Resize(size=resize, seed=seed).augment(X_train.swapaxes(-1, -2)).swapaxes(-1, -2)
