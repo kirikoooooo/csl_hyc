@@ -208,6 +208,9 @@ class MaxCrossCorrelationBlock(nn.Module):
 
     def forward(self, x, masking=False):
         start_time = time.time()
+        logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
+        torch.cuda.reset_peak_memory_stats()
+        pre_mem = torch.cuda.memory_allocated()
 
         x = self.shapelets(x)
         if masking:
@@ -228,12 +231,17 @@ class MaxCrossCorrelationBlock(nn.Module):
             logs.block_forward_stats_by_type['cross'][length] = {
                 "forward_total_time": 0.0,
                 "forward_calls": 1,
+                "peak_mem": None,
             }
 
         stats = logs.block_forward_stats_by_type['cross'][length]
         if stats["forward_calls"] < logs.global_iter_count :
             stats["forward_total_time"] += duration
             stats["forward_calls"] += 1
+
+        if stats["peak_mem"] is None:
+            stats["peak_mem"] = torch.cuda.max_memory_allocated() - pre_mem
+            stats["final_mem"] = 0
 
         return x.transpose(2, 1)
 

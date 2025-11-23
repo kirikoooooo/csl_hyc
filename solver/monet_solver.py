@@ -62,8 +62,8 @@ class SolverInfo:
         # mem_list = [10] * 8
         # fixed_mem_list = [0] * 8
         # compute_list = [100] * 8  # 每个节点计算代价为 100
-        mem_list = [int(x * GB_TO_BYTE) for x in mem_list]
-        fixed_mem_list = [int(x * GB_TO_BYTE) for x in fixed_mem_list]
+        mem_list = [int(x) for x in mem_list]
+        fixed_mem_list = [int(x) for x in fixed_mem_list]
         # 边列表: (u, v, data)
         self.edge_list: List[Tuple[int, int, 0]] = [
             (i, i + 16, 0) for i in range(16)
@@ -133,7 +133,7 @@ class ILPSolver:
     def __init__(self, si: SolverInfo, budget, gurobi_params: Dict[str, Any] = None, ablation=False, overhead=False,time_limit = 3000):
         self.gurobi_params = gurobi_params
         self.num_threads = self.gurobi_params.get('Threads', 1)
-        self.budget = int(budget * MEM_GCD_MULTIPLIER * GB_TO_KB)
+        self.budget = int(budget * MEM_GCD_MULTIPLIER / 1024)
         self.si: SolverInfo = si
         self.solve_time = None
         self.ablation = ablation

@@ -43,8 +43,8 @@ class SolverInfo:
         # mem_list = [10] * 8
         # fixed_mem_list = [0] * 8
         # compute_list = [100] * 8  # 每个节点计算代价为 100
-        mem_list = [int(x * GB_TO_BYTE) for x in mem_list]
-        fixed_mem_list = [int(x * GB_TO_BYTE) for x in fixed_mem_list]
+        mem_list = [int(x) for x in mem_list]
+        fixed_mem_list = [int(x) for x in fixed_mem_list]
         self.nodes = [
             Node(mem=mem_list[i], fixed_mem=fixed_mem_list[i], workspace_compute=[compute_list[i]])
             for i in range(self.size)
@@ -112,7 +112,7 @@ class ILPSolver:
         self.imposed_schedule = imposed_schedule
         self.solve_r = solve_r
         self.eps_noise = eps_noise
-        self.budget = int(budget * GB_TO_KB)
+        self.budget = int(budget / 1024)
         self.g: SolverInfo = g
         self.solve_time = None
 

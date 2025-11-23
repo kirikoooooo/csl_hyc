@@ -612,8 +612,98 @@ class LearningShapeletsCL:
         def compute_overall_peak():
             return max(compute_K()[1:])
 
-        b = global_backward_b
         memory_limit = self.args.lim * 1024 ** 3 #byte
+
+        # Collect Cross stats
+        peak_memory_cross = {}
+        for length in shapelet_lengths:
+            stat = logs.block_forward_stats_by_type["cross"].get(length)
+            if stat:
+                peak_memory_cross[length] = stat["peak_mem"] if "peak_mem" in stat else 0
+
+        # Calculate Cross Activations Memory (Approximate)
+        # num_shapelets_per_length_per_type = (self.num_shapelets // 3) // 8
+        if len(shapelet_lengths) > 0:
+            num_cross_per_len = (self.num_shapelets // 3) // len(shapelet_lengths)
+        else:
+            num_cross_per_len = 0
+
+        cross_acts_total = 0
+        for length in shapelet_lengths:
+             # Output size: (batch, num_shapelets, 1) ??? No, output of MaxCrossCorrelation is (batch, num_shapelets, 1) after max.
+             # But before Max it is (batch, num_shapelets, len-L+1).
+             # Does it retain the large tensor? No, Max backward only needs indices and input (if needed).
+             # The input to Max is the output of Conv1d.
+             # Conv1d output is large. Is it retained?
+             # PyTorch Max backward implementation usually requires input if indices are not enough or for specific cases.
+             # But actually for MaxPool, indices are enough. For torch.max(dim), it returns values and indices.
+             # If we have indices, we don't need input values for backward of Max.
+             # But we need input for Backward of Conv1d.
+             # The input to Conv1d is 'x'. 'x' is also used by other blocks.
+             # So 'x' is retained.
+             # The output of Conv1d (input to Max) is intermediate.
+             # If not checkpointed, does it need to be retained?
+             # Conv1d backward needs input and grad_output.
+             # It does NOT need output.
+             # So Conv1d output is NOT retained for backward.
+             # Max backward needs indices.
+             # So the memory retained by Cross Block is mainly INDICES from Max.
+             # Indices size: (batch, num_shapelets, 1) * 8 bytes (int64). Small.
+             # But wait, what about 'x'?
+             # 'x' is shared input. It is retained anyway.
+             # So Cross Block's unique retained memory is small?
+             # If so, why worry about Cross Acts?
+             # Let's check get_M_e logic again.
+             # get_M_e calculates Unfolded X size.
+             # If Unfolded X is retained, it is huge.
+             # Cross doesn't use Unfold. It uses Conv1d.
+             # So Cross doesn't retain Unfolded X.
+             # So Cross might indeed be very memory efficient regarding Activation!
+             # But what about Peak?
+             # Conv1d execution needs workspace.
+             # And 'x' (Input) is retained.
+             # If E and C checkpoint, they don't retain Unfolded X (if they used it).
+             # They only retain 'x' (Input).
+             # So 'x' is retained by everyone.
+             # The "Activation Memory" we are optimizing in E/C is the Intermediate Tensors (like Unfolded X or pairwise distances) that are expensive.
+             # If E/C checkpoint, these are discarded.
+             # Cross never checkpoints. But Cross (Conv1d) doesn't produce huge intermediates that need retention?
+             # Conv1d is efficient.
+             # However, peak_memory_cross might be high.
+             # So we should focus on subtracting 'max_cross_peak'.
+             # And what about 'global_pre_forward_mem'? That is static.
+             # So avail_budget = memory_limit - static - max_cross_peak.
+             # Let's try this.
+             pass
+
+        max_e_c_peak = forward_peek
+        max_cross_peak = max(peak_memory_cross.values()) if peak_memory_cross else 0
+        
+        # If Cross Peak is higher than E/C Peak, it determines the global peak (roughly).
+        # We need to ensure Solver leaves enough headroom.
+        # Budget given to Solver is for (Static + E/C Acts + E/C Peak).
+        # We want (Static + E/C Acts + Cross Peak) <= Limit.
+        # So (Static + E/C Acts) <= Limit - Cross Peak.
+        # Solver optimizes (Static + E/C Acts + E/C Peak).
+        # We want Solver to find S (Acts) such that:
+        # 1. S + E/C Peak <= Avail_Budget_1
+        # 2. S + Cross Peak <= Avail_Budget_2 (= Limit - Static)
+        # If we set Solver Budget = min(Limit - Static, Limit - Static - Cross_Peak + E/C_Peak) ??
+        # Simplified: Solver Budget = Memory_Limit - Static - max(0, Cross_Peak - E/C_Peak).
+        # If Cross Peak is small, Budget = Limit - Static.
+        # If Cross Peak is huge, Budget is reduced so S is compressed.
+        
+        avail_budget = memory_limit - logs.global_pre_forward_mem - max(0, max_cross_peak - max_e_c_peak)
+        
+        self.logger.info(f"Memory Limit: {memory_limit/1024**2:.2f} MB")
+        self.logger.info(f"Static Mem: {logs.global_pre_forward_mem/1024**2:.2f} MB")
+        self.logger.info(f"Max Cross Peak: {max_cross_peak/1024**2:.2f} MB")
+        self.logger.info(f"Max E/C Peak: {max_e_c_peak/1024**2:.2f} MB")
+        self.logger.info(f"Available Budget for Solver: {avail_budget/1024**2:.2f} MB")
+
+        if avail_budget <= 0:
+             self.logger.warning(f"Available budget {avail_budget} <= 0! Using full budget (unsafe).")
+             avail_budget = memory_limit 
 
         # 目标函数 zbin 的值来自于遗传算法的遍历,BE CAUTIOUS 之前这里是67
         def objective(z_bin):
@@ -656,9 +746,9 @@ class LearningShapeletsCL:
                 else:
                     mem[i] = get_backward_peak(i)
             if algo == "checkmate":
-                result =checkmate(T_euclidean,T_cross,mem,memory_limit)  # checkmate 里面会改变z_best的值
+                result =checkmate(T_euclidean,T_cross,mem,avail_budget)  # checkmate 里面会改变z_best的值
             else:
-                result = monet(T_euclidean,T_cross,mem,memory_limit)
+                result = monet(T_euclidean,T_cross,mem,avail_budget)
             print(result)
             # 验证内存限制是否到达
             mem_list = list(mem.values())
