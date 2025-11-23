@@ -253,6 +253,7 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
                         print('Classification:', train_acc, test_acc, epoch)
 
         logger.info(f"torch.cuda.max_memory_reserved() : {torch.cuda.max_memory_reserved()/(1024**3)}")
+        logger.info(f"torch.cuda.max_memory_allocated() : {max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())/(1024**3)}")
         # total_progress.set_description(f"loss: {np.mean(losses)}")
         total_progress.set_description(f"loss: {np.mean([loss[0] for loss in losses])},"
                                        f"loss_align: {np.mean([loss[2] for loss in losses])},"
