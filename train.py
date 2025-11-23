@@ -652,15 +652,24 @@ class LearningShapeletsCL:
 
             """
             mem = {}
-            for i in range(33):
-                if i<16:
+            for i in range(1, 33):
+                if i<=16:
                     mem[i] = get_peak_mem(i)
                 else:
                     mem[i] = get_backward_peak(i)
+            
+            # 减去模型参数占用的显存
+            available_budget = memory_limit - logs.model_param_memory_bytes
+            self.logger.info(f"总预算: {memory_limit/1024**3:.4f} GB, 模型参数: {logs.model_param_memory_bytes/1024**3:.4f} GB, 可用预算: {available_budget/1024**3:.4f} GB")
+            
+            if available_budget <= 0:
+                 self.logger.error("可用预算不足以容纳模型参数！")
+                 # 这种情况下应该抛出异常或者返回失败，但为了保持流程，我们可能设一个很小的值或者让它保持负数（solver会报错）
+            
             if algo == "checkmate":
-                result =checkmate(T_euclidean,T_cross,mem,memory_limit)  # checkmate 里面会改变z_best的值
+                result =checkmate(T_euclidean,T_cross,mem,available_budget)  # checkmate 里面会改变z_best的值
             else:
-                result = monet(T_euclidean,T_cross,mem,memory_limit)
+                result = monet(T_euclidean,T_cross,mem,available_budget)
             print(result)
             # 验证内存限制是否到达
             mem_list = list(mem.values())

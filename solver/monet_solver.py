@@ -68,6 +68,13 @@ class SolverInfo:
         self.edge_list: List[Tuple[int, int, 0]] = [
             (i, i + 16, 0) for i in range(16)
         ]
+        # Add forward chain dependencies
+        for i in range(15):
+            self.edge_list.append((i, i + 1, 0))
+        
+        # Add backward chain dependencies
+        for i in range(16, 31):
+            self.edge_list.append((i + 1, i, 0))
 
         # loss 节点索引（前向最后一个节点）
         self.loss = int(self.size / 2) -1
