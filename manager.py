@@ -531,6 +531,7 @@ class Manager:
                 if need_memory < 0:
                     local_checkpoint_module = self.strategy.get_checkpoint_module(round_input_size, self.shapelets_size_and_len, -need_memory)
                     # torch.cuda.empty_cache()
+                    logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
                     torch.cuda.memory.reset_peak_memory_stats()
                 # if round_input_size >= 14 * 16 * 3 * 1e4:
                 #     import pdb; pdb.set_trace()
@@ -572,6 +573,7 @@ class Manager:
             print(torch.cuda.max_memory_reserved())
             self.collect_model_memory(torch.cuda.max_memory_reserved() + self.checkpoint_reduce_memory)
             torch.cuda.empty_cache()
+            logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
             torch.cuda.memory.reset_peak_memory_stats()
 
     def set_input_size(self, input_size):

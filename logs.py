@@ -39,3 +39,6 @@ x = [1] * 33
 # 初始化为空，在训练前设置为全 shapelet 长度
 euclidean_checkpoint_shapelet_lengths = []
 cosine_checkpoint_shapelet_lengths = []
+
+# 记录一个epoch内的全局最大allocated显存
+epoch_max_allocated = 0

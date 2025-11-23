@@ -426,6 +426,7 @@ class LearningShapeletsCL:
             self.logger.info("📌 第一个 epoch：默认所有模块使用 checkpoint")
 
         for epoch in progress_bar:
+            logs.epoch_max_allocated = 0
 
             self.current_epoch = epoch_idx
             if self.is_ddp:
