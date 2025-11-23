@@ -7,9 +7,9 @@ import numpy as np
 # 1. 配置区域
 # ==========================================
 CSV_FILE_PATH = 'merged_results.csv'  # 数据文件路径
-TARGET_MEM_RANGE = (1, 15)            # 设置图表的显存显示范围 (Min GB, Max GB)
+TARGET_MEM_RANGE = (4, 24)            # 设置图表的显存显示范围 (Min GB, Max GB)
 
-# 【新增功能 1】Y轴偏移控制 (单位: 秒)
+#【新增功能 1】Y轴偏移控制 (单位: 秒)
 # ALGO_TIME_OFFSETS = {
 #     'Checkmate':  0.35,
 #     'Monet':      0.17,
@@ -112,8 +112,8 @@ def parse_csv_data(file_path):
             filename = parts[0]
             try:
                 # 第3列 real_memory, 第4列 time（索引2,3）
-                real_mem_val = float(parts[2])
-                time_val = float(parts[3])
+                real_mem_val = float(parts[3])
+                time_val = float(parts[4])
             except (ValueError, IndexError):
                 print(f"⚠️  第 {line_num} 行数据格式错误，跳过: {line}")
                 continue
@@ -131,6 +131,8 @@ def parse_csv_data(file_path):
                 dataset = "DuckDuckGeese"
             elif filename.startswith("PEMS"):
                 dataset = "PEMS-SF"
+            elif filename.startswith("Motor"):
+                dataset = "MotorImagery"
             # 可继续扩展...
 
             parsed_data.append({

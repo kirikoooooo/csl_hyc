@@ -46,12 +46,14 @@ class MinEuclideanDistBlock(nn.Module):
             logs.global_pre_forward_mem = torch.cuda.memory_allocated()
 
         start_time = time.time()
+        logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
         torch.cuda.reset_peak_memory_stats()
         pre_mem = torch.cuda.memory_allocated()
 
         x = x.unfold(2, self.shapelets_size, 1).contiguous()
         if logs.cdist_euclidean_mem is None:
             torch.cuda.empty_cache()
+            logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
             torch.cuda.reset_peak_memory_stats()
             begin = torch.cuda.memory_allocated()
             x = torch.cdist(x, self.shapelets, p=2, compute_mode='use_mm_for_euclid_dist')
@@ -117,6 +119,7 @@ class MaxCosineSimilarityBlock(nn.Module):
 
     def forward(self, x, masking=False):
         start_time = time.time()
+        logs.epoch_max_allocated = max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())
         torch.cuda.reset_peak_memory_stats()
         pre_mem = torch.cuda.memory_allocated()
         """

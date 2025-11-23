@@ -222,26 +222,29 @@ class LearningShapeletsCL:
 
         aug1 = np.random.choice(augmentation_list, 1, replace=False)
 
-        x_q = x.transpose(1, 2).cpu().numpy()
-        for aug in aug1:
-            x_q = eval('tsaug.' + aug + '.augment(x_q)')
-        x_q = torch.from_numpy(x_q).float()
-        x_q = x_q.transpose(1, 2)
+        # x_q = x.transpose(1, 2).cpu().numpy()
+        # for aug in aug1:
+        #     x_q = eval('tsaug.' + aug + '.augment(x_q)')
+        # x_q = torch.from_numpy(x_q).float()
+        # x_q = x_q.transpose(1, 2)
 
-        if self.to_cuda:
-            x_q = x_q.cuda()
+        # if self.to_cuda:
+        #     x_q = x_q.cuda()
 
-        aug2 = np.random.choice(augmentation_list, 1, replace=False)
-        while (aug2 == aug1).all():
-            aug2 = np.random.choice(augmentation_list, 1, replace=False)
+        # aug2 = np.random.choice(augmentation_list, 1, replace=False)
+        # while (aug2 == aug1).all():
+        #     aug2 = np.random.choice(augmentation_list, 1, replace=False)
 
-        x_k = x.transpose(1, 2).cpu().numpy()
-        for aug in aug2:
-            x_k = eval('tsaug.' + aug + '.augment(x_k)')
-        x_k = torch.from_numpy(x_k).float()
-        x_k = x_k.transpose(1, 2)
-        if self.to_cuda:
-            x_k = x_k.cuda()
+        # x_k = x.transpose(1, 2).cpu().numpy()
+        # for aug in aug2:
+        #     x_k = eval('tsaug.' + aug + '.augment(x_k)')
+        # x_k = torch.from_numpy(x_k).float()
+        # x_k = x_k.transpose(1, 2)
+        # if self.to_cuda:
+        #     x_k = x_k.cuda()
+
+        x_q = x
+        x_k = x
 
         num_shapelet_lengths = len(self.shapelets_size_and_len)
 
@@ -360,9 +363,9 @@ class LearningShapeletsCL:
             Y = torch.tensor(Y, dtype=torch.long).contiguous()
 
         train_ds = torch.utils.data.TensorDataset(X, Y)
-        sampler = torch.utils.data.distributed.DistributedSampler(train_ds, shuffle=True) if self.is_ddp else None
+        sampler = torch.utils.data.distributed.DistributedSampler(train_ds, shuffle=False) if self.is_ddp else None
 
-        train_dl = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=(sampler is None),
+        train_dl = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=False,
                                                sampler=sampler, drop_last=True)
 
         # set model in train mode
@@ -426,7 +429,7 @@ class LearningShapeletsCL:
             self.logger.info("📌 第一个 epoch：默认所有模块使用 checkpoint")
 
         for epoch in progress_bar:
-
+            logs.epoch_max_allocated = 0
             self.current_epoch = epoch_idx
             if self.is_ddp:
                 sampler.set_epoch(epoch + epoch_idx * epochs)
@@ -488,12 +491,12 @@ class LearningShapeletsCL:
             if self.current_epoch== 1:
                 self.estimate_backward_time_bias()
                 # 估算时间
-                start = time.time()
+                start = time.perf_counter()
                 if self.args.algo == "mimose":
                     self.plan_checkpoint_schedule_bucket()
                 else:
                     self.plan_checkpoint_schedule(algo = self.args.algo)
-                elapsed = time.time() - start
+                elapsed = time.perf_counter() - start
                 self.logger.info(f"🕒 显存计划规划时间: {elapsed:.2f} 秒")
 
 

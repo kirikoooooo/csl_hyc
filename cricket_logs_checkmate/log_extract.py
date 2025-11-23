@@ -11,7 +11,7 @@ def extract_info_from_log(file_path):
     peak_memory_mb = None
     max_reserved_gb = None
     avg_time = None
-
+    max_allocate_gb = None
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
@@ -30,6 +30,12 @@ def extract_info_from_log(file_path):
             if match:
                 max_reserved_gb = float(match.group(1))
             break
+    for line in reversed(lines):
+        if "torch.cuda.max_memory_allocated()" in line:
+            match = re.search(r'torch\.cuda\.max_memory_allocated\(\)\s*:\s*([\d.]+)', line)
+            if match:
+                max_allocate_gb = float(match.group(1))
+            break
 
     # 3. 提取平均时间
     for line in lines:
@@ -43,6 +49,7 @@ def extract_info_from_log(file_path):
         os.path.basename(file_path),
         peak_memory_mb,
         max_reserved_gb,
+        max_allocate_gb,
         avg_time
     )
 
@@ -87,7 +94,7 @@ def main():
     # 创建 DataFrame 并自然排序
     df = pd.DataFrame(
         results,
-        columns=["文件名", "反向传播显存峰值 (MB)", "max_memory_reserved (GB)", "策略后平均 epoch 时间 (s)"]
+        columns=["文件名", "反向传播显存峰值 (MB)", "max_memory_reserved (GB)","max_memory_allocated", "策略后平均 epoch 时间 (s)"]
     )
     df = df.sort_values(by="文件名", key=lambda col: col.map(natural_sort_key)).reset_index(drop=True)
 

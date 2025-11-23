@@ -159,6 +159,8 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
     total_progress = tqdm(range(epochs))
     count_time = []
     for epoch in total_progress:
+            # 👇 每轮开始前重置峰值统计
+        torch.cuda.reset_peak_memory_stats()
         torch.cuda.synchronize()
         start_time = time.time()
         losses = learning_shapelets.train(X_train, epochs=1, batch_size=batch_size, epoch_idx=epoch)
@@ -238,6 +240,7 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
                         print('Classification:', train_acc, test_acc, epoch)
 
         logger.info(f"torch.cuda.max_memory_reserved() : {torch.cuda.max_memory_reserved()/(1024**3)}")
+        logger.info(f"torch.cuda.max_memory_allocated() : {max(logs.epoch_max_allocated, torch.cuda.max_memory_allocated())/(1024**3)}")
         # total_progress.set_description(f"loss: {np.mean(losses)}")
         total_progress.set_description(f"loss: {np.mean([loss[0] for loss in losses])},"
                                        f"loss_align: {np.mean([loss[2] for loss in losses])},"
