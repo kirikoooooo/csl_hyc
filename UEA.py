@@ -54,7 +54,10 @@ parser.add_argument('-lim', default=1.0, type=float)
 parser.add_argument('-de', default="default", type=str)
 parser.add_argument('-logdir',default="default_logs",type=str)
 parser.add_argument('-algo',default="monet",type=str)
-
+parser.add_argument('-len', '--length', default=0, type=int,
+                    help='length of time series')
+parser.add_argument('-dim', '--dimension', default=0, type=int,
+                    help='target number of channels (dimension); set >0 to override original n_channels')
 def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=8, to_cuda=True, eval_per_x_epochs=10,
                  dist_measure='mix', rank=-1, world_size=-1, resize=0, checkpoint=False, task='classification',
                  dynamic_checkpoint=False,args = None):
@@ -117,10 +120,49 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
         X_train = tsaug.Resize(size=resize, seed=seed).augment(X_train.swapaxes(-1, -2)).swapaxes(-1, -2)
         X_test = tsaug.Resize(size=resize, seed=seed).augment(X_test.swapaxes(-1, -2)).swapaxes(-1, -2)
 
+
     n_ts, n_channels, len_ts = X_train.shape
     loss_func = nn.CrossEntropyLoss()
     num_classes = len(set(y_train))
+     # —— 放在原有 `if resize > 0:` 分支之后（或之前均可，只要独立）——
+    if args.resize <= 0 and args.length > 0:  #未启用 resize
+        original_len_ts = len_ts  # 记录原始长度（可选，用于日志）
+        new_len = args.length
+        new_len = max(3, new_len)  # 防止过小
+        if new_len != len_ts:
+            logger.info(f"[Scaling] length {len_ts} → {new_len}")
+            # 👇 关键：同样用 tsaug.Resize，但 size = new_len
+            X_train = tsaug.Resize(size=new_len, seed=seed).augment(
+                X_train.swapaxes(-1, -2)
+            ).swapaxes(-1, -2)
+            X_test = tsaug.Resize(size=new_len, seed=seed).augment(
+                X_test.swapaxes(-1, -2)
+            ).swapaxes(-1, -2)
+            # 更新 len_ts（⚠️ 必须！影响后续 shapelet 长度范围）
+            _, _, len_ts = X_train.shape
 
+    # —— 维度（通道数）调整 ——
+    if args.dimension > 0 and args.dimension != n_channels:
+        target_dim = args.dimension
+        logger.info(f"[Dimension] channels {n_channels} → {target_dim}")
+
+        if target_dim < n_channels:
+            # 裁剪：取前 target_dim 个通道
+            X_train = X_train[:, :target_dim, :]
+            X_test = X_test[:, :target_dim, :]
+        else:
+            # 扩展：重复最后一通道 或 随机采样/零填充（这里用重复最后一通道）
+            # 方式1：重复最后一通道（简单确定性）
+            repeats = target_dim - n_channels
+            extra_channels = np.tile(X_train[:, [-1], :], (1, repeats, 1))
+            X_train = np.concatenate([X_train, extra_channels], axis=1)
+
+            extra_channels_test = np.tile(X_test[:, [-1], :], (1, repeats, 1))
+            X_test = np.concatenate([X_test, extra_channels_test], axis=1)
+
+        # 更新 n_channels
+        n_channels = X_train.shape[1]
+        logger.info(f"New shape: X_train {X_train.shape}, X_test {X_test.shape}")
     # K = MV = 40, R = 8
     # D_repr = RK
     shapelets_size_and_len = {int(i): 40 for i in

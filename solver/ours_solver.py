@@ -118,7 +118,7 @@ def add_memory_peak_constraints(
         k_expr = get_backward_peak(m) + total_final_expr - cum_release_expr
 
         # 重计算
-        k_expr2 = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + global_pre_forward_mem + total_final_expr - cum_release_expr
+        k_expr2 = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1])
 
         #k_expr = (1-x_vars[m])*k_expr2 + x_vars[m]*k_expr
         constraints.append(

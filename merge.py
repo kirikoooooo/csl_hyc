@@ -95,12 +95,12 @@ def merge_experiment_results(folder_list, csv_filename="log_summery.csv", output
 # ==============================
 if __name__ == "__main__":
     experiment_folders = [
-        "cricket_logs_diff",
-        "cricket_logs_ga",
-        "cricket_logs_checkmate",
-        "cricket_logs_monet",
-        "cricket_logs_mimose",
-        "cricket_logs_oursILP"
+        # "cricket_logs_diff",
+        # "cricket_logs_ga",
+        "./useful_old/cricket_logs_checkmate",
+        "./useful_old/cricket_logs_monet",
+        "./useful_old/cricket_logs_mimose",
+        "./useful_old/cricket_logs_oursILP"
     ]
 
     merge_experiment_results(

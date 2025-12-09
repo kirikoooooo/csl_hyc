@@ -669,6 +669,10 @@ class LearningShapeletsCL:
             self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
             # 写入z_best
             z_best = np.array(result[:16])
+            # # 如果z_best 中含有元素0 exit(0)
+            # if 0 in z_best:
+            #     self.logger.info("规划结果含有0，退出程序")
+            #     exit(1)
 
 
         # 差分进化
@@ -722,7 +726,7 @@ class LearningShapeletsCL:
                 backward_peak_values=backward_peak_values,
                 retained_activation_values=retain,
                 global_pre_forward_mem=global_pre_forward_mem,
-                objective_weights=[],
+                objective_weights=None,
                 shapelet_lengths=shapelet_lengths,
                 T_cosine=T_cosine,
                 T_euclidean=T_euclidean,

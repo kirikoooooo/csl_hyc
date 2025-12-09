@@ -1,0 +1,95 @@
+2025-12-04 14:10:52,314 - INFO - [Scaling] length 1197 → 1250
+2025-12-04 14:10:52,569 - INFO - 🧮 参数显存统计（单位：MB）
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 总计: 1.3390 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=125: 0.0372 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=250: 0.0744 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=375: 0.1116 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=500: 0.1488 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=625: 0.1860 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=750: 0.2232 MB
+2025-12-04 14:10:52,569 - INFO - [参数显存] euclidean 长度=875: 0.2604 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] euclidean 长度=1000: 0.2975 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 总计: 1.3390 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=125: 0.0372 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=250: 0.0744 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=375: 0.1116 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=500: 0.1488 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=625: 0.1860 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=750: 0.2232 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=875: 0.2604 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] cosine 长度=1000: 0.2975 MB
+2025-12-04 14:10:52,570 - INFO - [参数显存] 模型参数总量: 1,200,316，显存: 4.5788 MB
+2025-12-04 14:10:53,149 - INFO - 📌 第一个 epoch：默认所有模块使用 checkpoint
+2025-12-04 14:10:54,395 - INFO - Epoch 1 completed in 1.251340 seconds
+2025-12-04 14:10:54,963 - INFO - torch.cuda.max_memory_reserved() : 8.119140625
+2025-12-04 14:10:54,963 - INFO - torch.cuda.max_memory_allocated() : 2.3502230644226074
+2025-12-04 14:10:55,588 - INFO - 
+[🔁 拟合反向传播时间模型]
+2025-12-04 14:10:55,589 - INFO - 总反向传播时间: 0.597511s
+2025-12-04 14:10:55,589 - INFO - 拟合模型: backward_total ≈ 2 × (A + B) + b
+2025-12-04 14:10:55,589 - INFO - A = 1.118561, B = 0.022603, b = -0.543653s
+2025-12-04 14:10:55,633 - INFO - Set parameter LicenseID to value 2706656
+2025-12-04 14:10:55,637 - INFO - Set parameter LogToConsole to value 1
+2025-12-04 14:10:55,637 - INFO - Set parameter LogFile to value ""
+2025-12-04 14:10:55,638 - INFO - Set parameter Threads to value 12
+2025-12-04 14:10:55,638 - INFO - Set parameter TimeLimit to value 3600
+2025-12-04 14:10:55,638 - INFO - Set parameter OptimalityTol to value 0.0001
+2025-12-04 14:10:55,638 - INFO - Set parameter IntFeasTol to value 1e-05
+2025-12-04 14:10:55,638 - INFO - Set parameter StartNodeLimit to value 10000000
+2025-12-04 14:10:55,721 - INFO - Set parameter TimeLimit to value 3600
+2025-12-04 14:10:55,721 - INFO - 
+2025-12-04 14:10:55,721 - INFO - 
+2025-12-04 14:10:55,721 - INFO - Restarting solve
+2025-12-04 14:10:55,721 - INFO - 
+2025-12-04 14:10:55,721 - INFO - 
+2025-12-04 14:10:55,724 - INFO - Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (linux64 - "Ubuntu 20.04.6 LTS")
+2025-12-04 14:10:55,724 - INFO - 
+2025-12-04 14:10:55,724 - INFO - CPU model: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+2025-12-04 14:10:55,724 - INFO - Thread count: 48 physical cores, 96 logical processors, using up to 12 threads
+2025-12-04 14:10:55,724 - INFO - 
+2025-12-04 14:10:55,724 - INFO - Non-default parameters:
+2025-12-04 14:10:55,724 - INFO - TimeLimit  3600
+2025-12-04 14:10:55,724 - INFO - OptimalityTol  0.0001
+2025-12-04 14:10:55,724 - INFO - StartNodeLimit  10000000
+2025-12-04 14:10:55,724 - INFO - Threads  12
+2025-12-04 14:10:55,724 - INFO - 
+2025-12-04 14:10:55,724 - INFO - Optimize a model with 5603 rows, 3584 columns and 15200 nonzeros
+2025-12-04 14:10:55,725 - INFO - Model fingerprint: 0x97749cec
+2025-12-04 14:10:55,725 - INFO - Variable types: 1024 continuous, 2560 integer (2560 binary)
+2025-12-04 14:10:55,725 - INFO - Coefficient statistics:
+2025-12-04 14:10:55,725 - INFO -   Matrix range     [1e+00, 3e+15]
+2025-12-04 14:10:55,725 - INFO -   Objective range  [6e+04, 2e+06]
+2025-12-04 14:10:55,725 - INFO -   Bounds range     [1e+00, 2e+16]
+2025-12-04 14:10:55,725 - INFO -   RHS range        [1e+00, 2e+16]
+2025-12-04 14:10:55,725 - INFO - Warning: Model contains large matrix coefficient range
+2025-12-04 14:10:55,725 - INFO - Warning: Model contains large rhs
+2025-12-04 14:10:55,725 - INFO - Warning: Model contains large bounds
+2025-12-04 14:10:55,725 - INFO -          Consider reformulating model or setting NumericFocus parameter
+2025-12-04 14:10:55,725 - INFO -          to avoid numerical issues.
+2025-12-04 14:10:55,746 - INFO - Presolve removed 4283 rows and 1964 columns
+2025-12-04 14:10:55,746 - INFO - Presolve time: 0.02s
+2025-12-04 14:10:55,746 - INFO - Presolved: 1320 rows, 1620 columns, 4514 nonzeros
+2025-12-04 14:10:55,748 - INFO - Variable types: 0 continuous, 1620 integer (1095 binary)
+2025-12-04 14:10:55,763 - INFO - 
+2025-12-04 14:10:55,763 - INFO - Root relaxation: objective 2.890140e+07, 431 iterations, 0.00 seconds (0.00 work units)
+2025-12-04 14:10:55,773 - INFO - 
+2025-12-04 14:10:55,773 - INFO -     Nodes    |    Current Node    |     Objective Bounds      |     Work
+2025-12-04 14:10:55,773 - INFO -  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+2025-12-04 14:10:55,773 - INFO - 
+2025-12-04 14:10:55,773 - INFO -      0     0 2.8901e+07    0    3          - 2.8901e+07      -     -    0s
+2025-12-04 14:10:55,798 - INFO - H    0     0                    4.332153e+07 2.8905e+07  33.3%     -    0s
+2025-12-04 14:10:55,800 - INFO - *    0     0               0    2.894518e+07 2.8945e+07  0.00%     -    0s
+2025-12-04 14:10:55,800 - INFO - 
+2025-12-04 14:10:55,800 - INFO - Cutting planes:
+2025-12-04 14:10:55,800 - INFO -   GUB cover: 1
+2025-12-04 14:10:55,800 - INFO - 
+2025-12-04 14:10:55,800 - INFO - Explored 1 nodes (531 simplex iterations) in 0.08 seconds (0.04 work units)
+2025-12-04 14:10:55,800 - INFO - Thread count was 12 (of 96 available processors)
+2025-12-04 14:10:55,801 - INFO - 
+2025-12-04 14:10:55,801 - INFO - Solution count 2: 2.89452e+07 4.33215e+07 
+2025-12-04 14:10:55,801 - INFO - 
+2025-12-04 14:10:55,801 - INFO - Optimal solution found (tolerance 1.00e-04)
+2025-12-04 14:10:55,801 - INFO - Best objective 2.894518000000e+07, best bound 2.894518000000e+07, gap 0.0000%
+2025-12-04 14:10:55,816 - INFO - 规划前的显存GB：18.0
+2025-12-04 14:10:55,816 - INFO - 规划后的显存GB：16.66035556793213
+2025-12-04 14:10:55,816 - INFO - 规划结果含有0，退出程序

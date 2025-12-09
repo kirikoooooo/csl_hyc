@@ -1,22 +1,22 @@
-
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import numpy as np
+import re
 
 # ==========================================
 # 1. 配置区域
 # ==========================================
 CSV_FILE_PATH = 'merged_results.csv'
 
-# 不同数据集的显存范围 (Min GB, Max GB)
-DATASET_MEM_RANGES = {
-    'Cricket':       (6, 14),
+# 【核心修改】每个数据集独立的 Budget 区间 (Min GB, Max GB)
+DATASET_BUDGET_RANGES = {
+    'Cricket':       (6, 14),      # 示例值，请按实际调整
     'DuckDuckGeese': (8, 20),
     'MotorImagery':  (6, 16),
     'PEMS-SF':       (8, 20),
 }
-DEFAULT_MEM_RANGE = (8, 20)
+DEFAULT_BUDGET_RANGE = (8, 20)
 
 ALGO_TIME_OFFSETS = {
     'Checkmate':  0.0,
@@ -49,18 +49,22 @@ def infer_algorithm_from_filename(filename: str) -> str:
     else:
         return "Unknown"
 
-def enforce_decreasing(df):
-    if df.empty:
-        return df
-    df_sorted = df.sort_values('real_memory')
-    keep_indices = []
-    min_time_so_far = float('inf')
-    for idx, row in df_sorted.iterrows():
-        current_time = row['time']
-        if current_time <= min_time_so_far:
-            keep_indices.append(idx)
-            min_time_so_far = current_time
-    return df.loc[keep_indices].copy()
+def extract_budget_from_filename(filename: str) -> float:
+    # 匹配 _XGB 或 XGB（支持小数）
+    match = re.search(r'_(\d+\.?\d*)\s*GB', filename, re.IGNORECASE)
+    if not match:
+        match = re.search(r'(\d+\.?\d*)\s*GB', filename, re.IGNORECASE)
+    return float(match.group(1)) if match else np.nan
+
+def enforce_decreasing_by_budget(group):
+    group = group.sort_values('budget')
+    keep = []
+    min_time = float('inf')
+    for _, row in group.iterrows():
+        if row['time'] <= min_time:
+            keep.append(row)
+            min_time = row['time']
+    return pd.DataFrame(keep)
 
 # ==========================================
 # 3. 数据解析逻辑
@@ -78,10 +82,7 @@ def parse_csv_data(file_path):
 
     for line_num, line in enumerate(lines, start=1):
         line = line.strip()
-        if not line:
-            continue
-
-        if line.startswith("文件名") or line.lower().startswith("filename"):
+        if not line or line.startswith("文件名") or line.lower().startswith("filename"):
             continue
 
         if line.lower().startswith("algorithm:"):
@@ -114,6 +115,10 @@ def parse_csv_data(file_path):
             if algo == "Unknown":
                 algo = current_algo
 
+            budget = extract_budget_from_filename(filename)
+            if np.isnan(budget):
+                continue
+
             dataset = "Unknown"
             if filename.startswith("Cricket"):
                 dataset = "Cricket"
@@ -128,28 +133,60 @@ def parse_csv_data(file_path):
                 'algorithm': algo,
                 'dataset': dataset,
                 'real_memory': real_mem_val,
-                'time': time_val
+                'budget': budget,
+                'time': time_val,
+                'filename': filename
             })
 
     df = pd.DataFrame(parsed_data)
     if not df.empty:
-        print(f"✅ 成功解析 {len(df)} 条记录，含算法: {df['algorithm'].unique().tolist()}")
+        print(f"✅ 成功解析 {len(df)} 条记录")
+        print(f"   算法: {df['algorithm'].unique().tolist()}")
+        print(f"   Budget 范围: {df['budget'].min():.2f} ~ {df['budget'].max():.2f} GB")
     return df
 
 # ==========================================
-# 4. 绘图函数
+# 4. 聚合函数（可选）
 # ==========================================
-def plot_and_save(df, dataset_mem_ranges, default_range=(8, 20)):
+def aggregate_by_budget(df, agg_method='mean'):
+    required_cols = ['algorithm', 'dataset', 'budget', 'time']
+    if not all(col in df.columns for col in required_cols):
+        return df
+
+    grouped = df.groupby(['algorithm', 'dataset', 'budget'], as_index=False)
+    if agg_method == 'mean':
+        df_agg = grouped.agg({
+            'time': 'mean',
+            'real_memory': 'mean'
+        }).reset_index(drop=True)
+    elif agg_method == 'min':
+        df_agg = grouped.agg({
+            'time': 'min',
+            'real_memory': 'mean'
+        }).reset_index(drop=True)
+    else:
+        return df
+
+    print(f"📊 按 (algo, dataset, budget) 聚合 → {len(df)} → {len(df_agg)} 条记录")
+    return df_agg
+
+# ==========================================
+# 5. 绘图函数（动态区间）
+# ==========================================
+def plot_and_save(df, dataset_budget_ranges, default_range=(8, 20)):
     datasets = df['dataset'].unique()
 
     for dataset_name in datasets:
         if dataset_name == "Unknown":
             continue
 
+        print(f"\n📊 正在处理数据集: {dataset_name} ...")
         algo_subset = df[df['dataset'] == dataset_name]
         available_algos = sorted(algo_subset['algorithm'].unique())
-        mem_range = dataset_mem_ranges.get(dataset_name, default_range)
-        x_min, x_max = mem_range
+
+        # ✅ 动态获取该数据集的 budget 区间
+        x_min, x_max = dataset_budget_ranges.get(dataset_name, default_range)
+        x_ticks = np.arange(max(1, int(x_min)), int(x_max) + 1, 1)
 
         plt.figure(figsize=(10, 6))
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -159,43 +196,46 @@ def plot_and_save(df, dataset_mem_ranges, default_range=(8, 20)):
             if algo_data.empty:
                 continue
 
-            algo_data = enforce_decreasing(algo_data)
+            algo_data = enforce_decreasing_by_budget(algo_data)
             offset = ALGO_TIME_OFFSETS.get(algo, 0.0)
             if offset != 0.0:
                 algo_data['time'] += offset
 
-            algo_data = algo_data.sort_values('real_memory')
+            algo_data = algo_data.sort_values('budget')
             style = STYLES.get(algo, {'color': 'gray', 'marker': 'x', 'linestyle': '--'})
 
-            plt.plot(algo_data['real_memory'], algo_data['time'],
+            plt.plot(algo_data['budget'], algo_data['time'],
                      label=algo,
                      linewidth=2.0,
                      markersize=7,
                      **style)
 
         plt.xlim(x_min, x_max)
-        plt.xlabel('Real Memory Reserved (GB)', fontsize=12, fontweight='bold')
+        plt.xticks(x_ticks)
+        plt.xlabel('Memory Budget (GB)', fontsize=12, fontweight='bold')
         plt.ylabel('Average Epoch Time (s)', fontsize=12, fontweight='bold')
-        plt.title(f'Performance Comparison: {dataset_name}', fontsize=14, pad=35)
+        plt.title(f'Performance vs Memory Budget: {dataset_name}', fontsize=14, pad=35)
         plt.grid(True, linestyle='--', alpha=0.6)
         plt.legend(fontsize=10, loc='best')
 
+        # 上方副 X 轴：归一化 budget 比
         ax1 = plt.gca()
         ax2 = ax1.twiny()
         ax2.set_xlim(ax1.get_xlim())
-        ratios = np.array([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+        ratios = np.linspace(0, 1, 6)
         tick_locs = x_min + ratios * (x_max - x_min)
         ax2.set_xticks(tick_locs)
         ax2.set_xticklabels([f"{r:.1f}" for r in ratios], fontsize=10)
-        ax2.set_xlabel('Memory Usage Ratio (Normalized)', fontsize=12, labelpad=10)
+        ax2.set_xlabel('Normalized Budget Ratio', fontsize=12, labelpad=10)
 
-        output_filename = f"Result_{dataset_name.replace(' ', '_')}.png"
+        output_filename = f"Result_Budget_{dataset_name.replace(' ', '_')}.png"
         plt.tight_layout()
         plt.savefig(output_filename, dpi=300, bbox_inches='tight')
         plt.close()
+        print(f"   ✅ 已保存: {output_filename}（Budget 区间: [{x_min}, {x_max}] GB）")
 
 # ==========================================
-# 5. 主程序
+# 6. 主程序
 # ==========================================
 if __name__ == "__main__":
     print("🔍 开始读取数据...")
@@ -203,7 +243,11 @@ if __name__ == "__main__":
 
     if df.empty:
         print("❌ 未能解析到有效数据，请检查 CSV 文件格式。")
+        print("💡 示例有效行: PEMS-SFoursILP_bs16_3GB.log,?,2569.07,3.939,10.49")
+        print("   注意：文件名必须含 'XGB' 以提取 budget！")
     else:
         print(f"\n📈 共 {len(df)} 条数据，数据集: {df['dataset'].unique().tolist()}")
-        plot_and_save(df, DATASET_MEM_RANGES, DEFAULT_MEM_RANGE)
+
+        df = aggregate_by_budget(df, agg_method='mean')
+        plot_and_save(df, DATASET_BUDGET_RANGES, DEFAULT_BUDGET_RANGE)
         print("\n🎉 所有图表已生成完毕！")
