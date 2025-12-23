@@ -452,68 +452,69 @@ class LearningShapeletsCL:
             # 监控结果文件存放位置
             hander_path = './log/' + self.args.dataset + self.args.de
             #性能监控
-            # with torch.profiler.profile(
-            #         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-            #         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-            #         #on_trace_ready=torch.profiler.tensorboard_trace_handler(hander_path),
-            #         on_trace_ready=torch.profiler.tensorboard_trace_handler(hander_path, worker_name="epoch"+str(self.current_epoch)),
-            #         record_shapes=True,
-            #         profile_memory=True,
-            #         with_stack=True
-            # ) as prof:
-            self.model.train()
-            if self.current_epoch == 0:
-                logs.global_iter_count = len(train_dl) * 2
+            with torch.profiler.profile(
+                    activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+                    schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+                    #on_trace_ready=torch.profiler.tensorboard_trace_handler(hander_path),
+                    on_trace_ready=torch.profiler.tensorboard_trace_handler(hander_path, worker_name="epoch"+str(self.current_epoch)),
+                    record_shapes=True,
+                    profile_memory=True,
+                    with_stack=True
+            ) as prof:
+                self.model.train()
+                if self.current_epoch == 0:
+                    logs.global_iter_count = len(train_dl) * 2
 
-            for (x, idx) in train_dl:
-                self.batch_size = x.shape[0]
-                self.column = x.shape[1]
-                self.length = x.shape[2]
-                #prof.step()
-                # check if training should be done with regularizer
-                if self.to_cuda:
-                    x = x.cuda()
+                for (x, idx) in train_dl:
+                    self.batch_size = x.shape[0]
+                    self.column = x.shape[1]
+                    self.length = x.shape[2]
+                    prof.step()
+                    # check if training should be done with regularizer
+                    if self.to_cuda:
+                        x = x.cuda()
+
+
+                    if not self.use_regularizer:
+                        torch.cuda.synchronize()
+                        start_time = time.time()
+                        current_loss_ce, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k = self.update_CL(
+                            x, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k)
+                        torch.cuda.synchronize()
+                        if(self.current_epoch == 1):
+
+                            logs.global_backward_total_time += time.time() - start_time
+                        losses_ce.append(current_loss_ce)
+                    else:
+                        pass
+
+                if self.current_epoch== 1:
+                    self.estimate_backward_time_bias()
+                    # 估算时间
+                    start = time.perf_counter()
+                    if self.args.algo == "mimose":
+                        self.plan_checkpoint_schedule_bucket()
+                    else:
+                        self.plan_checkpoint_schedule(algo = self.args.algo)
+                    elapsed = time.perf_counter() - start
+                    self.logger.info(f"🕒 显存计划规划时间: {elapsed:.6f} 秒")
+                    # exit(0)
+
 
 
                 if not self.use_regularizer:
-                    torch.cuda.synchronize()
-                    start_time = time.time()
-                    current_loss_ce, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k = self.update_CL(
-                        x, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k)
-                    torch.cuda.synchronize()
-                    if(self.current_epoch == 1):
-
-                        logs.global_backward_total_time += time.time() - start_time
-                    losses_ce.append(current_loss_ce)
+                    progress_bar.set_description(f"Loss: {current_loss_ce}")
                 else:
-                    pass
+                    if self.l1 > 0.0 and self.l2 > 0.0:
+                        progress_bar.set_description(f"Loss CE: {current_loss_ce}, Loss dist: {current_loss_dist}, "
+                                                    f"Loss sim: {current_loss_sim}")
+                    else:
+                        progress_bar.set_description(f"Loss CE: {current_loss_ce}, Loss dist: {current_loss_dist}")
+                if self.scheduler != None:
+                    self.scheduler.step()
 
-            if self.current_epoch== 1:
-                self.estimate_backward_time_bias()
-                # 估算时间
-                start = time.perf_counter()
-                if self.args.algo == "mimose":
-                    self.plan_checkpoint_schedule_bucket()
-                else:
-                    self.plan_checkpoint_schedule(algo = self.args.algo)
-                elapsed = time.perf_counter() - start
-                self.logger.info(f"🕒 显存计划规划时间: {elapsed:.2f} 秒")
-
-
-
-            if not self.use_regularizer:
-                progress_bar.set_description(f"Loss: {current_loss_ce}")
-            else:
-                if self.l1 > 0.0 and self.l2 > 0.0:
-                    progress_bar.set_description(f"Loss CE: {current_loss_ce}, Loss dist: {current_loss_dist}, "
-                                                f"Loss sim: {current_loss_sim}")
-                else:
-                    progress_bar.set_description(f"Loss CE: {current_loss_ce}, Loss dist: {current_loss_dist}")
-            if self.scheduler != None:
-                self.scheduler.step()
-
-            if self.dynamic_checkpoint:
-                self.dc_manager.after_update()
+                if self.dynamic_checkpoint:
+                    self.dc_manager.after_update()
 
 
             return losses_ce if not self.use_regularizer else (losses_ce, losses_dist, losses_sim) if self.l2 > 0.0 else (

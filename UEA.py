@@ -197,7 +197,7 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
     # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [300, 800])
     learning_shapelets.set_optimizer(optimizer)
 
-    epochs = 10
+    epochs = 3
     total_progress = tqdm(range(epochs))
     count_time = []
     for epoch in total_progress:

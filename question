@@ -23,3 +23,6 @@ apt install wget
 
 
 docker run -i -t --gpus all nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 -v /mnt/data/user_liangzhiyu/huyuchen:/root/App --name cudnn8_cuda118 /bin/bash
+
+
+tensorboard --logdir=./log

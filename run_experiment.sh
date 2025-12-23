@@ -24,30 +24,30 @@ echo "Starting experiments..."
 
  #python UEA.py Cricket -lim=18 -de=18GB -b=64  -logdir=./ -algo=oursILP|| echo "⚠️ Failed: Cricket -lim=3"
 # 实验1 budget主实验
-# #定义算法列表
-# algos=("mimose" "checkmate" "monet" "oursILP")
-# # algos=("monet")
-# #定义 lim 值（de 与 lim 数值相同，单位 GB）
-# # lim_values=(0.5 0.75 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0)
-# # lim_values=(8 10 12 14 16)
-# lim_values=(7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23) #motor
-# # lim_values=(5 6 7 8 9 10 11 12 13 14 15)
-# # lim_values=(10)
-# # lim_values=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
-# # lim_values=(7 8)
-# #遍历每个算法
-# for algo in "${algos[@]}"; do
-#     logdir="cricket_logs_${algo}"
-#     for lim in "${lim_values[@]}"; do
-#         # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
-#         runtime_lim=$(awk "BEGIN {printf \"%.1f\", $lim * 1.0}")
+#定义算法列表
+algos=("checkmate" "oursILP")
+# algos=("monet")
+#定义 lim 值（de 与 lim 数值相同，单位 GB）
+# lim_values=(0.5 0.75 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0)
+# lim_values=(8 10 12 14 16)
+lim_values=(16) #motor
+# lim_values=(5 6 7 8 9 10 11 12 13 14 15)
+# lim_values=(10)
+# lim_values=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
+# lim_values=(7 8)
+#遍历每个算法
+for algo in "${algos[@]}"; do
+    logdir="trace_${algo}"
+    for lim in "${lim_values[@]}"; do
+        # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
+        runtime_lim=$(awk "BEGIN {printf \"%.1f\", $lim * 1.0}")
 
-#         de="${lim}GB"
-#         cmd="python UEA.py MotorImagery -lim=${runtime_lim} -de=${algo}_bs2_${de} -b=2 -logdir=${logdir} -algo=${algo}"
-#         fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${lim}"
-#         eval "$cmd" || echo "$fail_msg"
-#     done
-# done
+        de="${lim}GB"
+        cmd="python UEA.py MotorImagery -lim=${runtime_lim} -de=${algo}_bs2_${de} -b=2 -logdir=${logdir} -algo=${algo}"
+        fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${lim}"
+        eval "$cmd" || echo "$fail_msg"
+    done
+done
 
 
 
@@ -71,24 +71,24 @@ echo "Starting experiments..."
 # done
 
 
-#实验三，不同bs
-algos=("oursILP") #18.2
-#algos=("monet" "checkmate" "mimose" "oursILP")
-#limlen_values=(1300 1400 1500 1600)
-limbs_values=(68 72)
-# limsc_values=(1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0 2.1 2.2 2.3 2.4 2.5)
-for algo in "${algos[@]}"; do
-    logdir="cricket_logs_${algo}"
-    for limbs in "${limbs_values[@]}"; do
-        # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
-        runtime_lim=$(awk "BEGIN {printf \"%.1f\", $limsc * 1.0}")
+# #实验三，不同bs
+# algos=("oursILP") #18.2
+# #algos=("monet" "checkmate" "mimose" "oursILP")
+# #limlen_values=(1300 1400 1500 1600)
+# limbs_values=(68 72)
+# # limsc_values=(1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0 2.1 2.2 2.3 2.4 2.5)
+# for algo in "${algos[@]}"; do
+#     logdir="cricket_logs_${algo}"
+#     for limbs in "${limbs_values[@]}"; do
+#         # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
+#         runtime_lim=$(awk "BEGIN {printf \"%.1f\", $limsc * 1.0}")
 
-        de="${limbs}bs"
-        cmd="python UEA.py Cricket -lim=18 -de=${algo}_bsvariable_${de} -b=${limbs} -logdir=${logdir} -algo=${algo}"
-        fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${limbs}"
-        eval "$cmd" || echo "$fail_msg"
-    done
-done
+#         de="${limbs}bs"
+#         cmd="python UEA.py Cricket -lim=18 -de=${algo}_bsvariable_${de} -b=${limbs} -logdir=${logdir} -algo=${algo}"
+#         fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${limbs}"
+#         eval "$cmd" || echo "$fail_msg"
+#     done
+# done
 
 # #实验四，不同dim
 # algos=("oursILP") #18.2
