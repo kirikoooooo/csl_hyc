@@ -10,6 +10,64 @@ from utils import generate_binomial_mask
 import logs
 
 
+def _backward_grad_hook(module, grad):
+    if not module.training or not module.to_cuda or not torch.cuda.is_available():
+        return grad
+    if logs.skip_first_forward and not module._bw_warmup_done:
+        module._bw_warmup_done = True
+        return grad
+    torch.cuda.synchronize()
+    module._bw_t0 = time.time()
+    torch.cuda.reset_peak_memory_stats()
+    module._bw_pre_mem = torch.cuda.memory_allocated()
+    return grad
+
+
+def _make_block_backward_post_hook(dist_type: str):
+
+    def post_hook(module, grad_input, grad_output):
+        if not module.training or not module.to_cuda or not torch.cuda.is_available():
+            return
+        if getattr(module, "_bw_t0", None) is None:
+            return
+        torch.cuda.synchronize()
+        duration = time.time() - module._bw_t0
+        length = module.shapelets_size
+        peak_delta = torch.cuda.max_memory_allocated() - module._bw_pre_mem
+        logs.global_backward_peak_mem = max(
+            logs.global_backward_peak_mem, torch.cuda.max_memory_allocated()
+        )
+
+        if length not in logs.block_backward_stats_by_type[dist_type]:
+            logs.block_backward_stats_by_type[dist_type][length] = {
+                "backward_total_time": 0.0,
+                "backward_calls": 1,
+                "peak_mem": None,
+            }
+        stats = logs.block_backward_stats_by_type[dist_type][length]
+        if stats["backward_calls"] < logs.global_iter_count:
+            stats["backward_total_time"] += duration
+            stats["backward_calls"] += 1
+        if stats["peak_mem"] is None:
+            stats["peak_mem"] = peak_delta
+            stats["final_mem"] = 0
+        module._bw_t0 = None
+
+    return post_hook
+
+
+def _attach_backward_tensor_hook(module, tensor):
+    if module.to_cuda and module.training and torch.cuda.is_available():
+        tensor.register_hook(lambda g: _backward_grad_hook(module, g))
+    return tensor
+
+
+def _register_block_backward_profiling(module, dist_type: str):
+    module._bw_warmup_done = False
+    module._bw_t0 = None
+    module.register_full_backward_hook(_make_block_backward_post_hook(dist_type))
+
+
 def _calc_parameter_memory_bytes(module: nn.Module) -> int:
     total = 0
     for param in module.parameters(recurse=True):
@@ -35,6 +93,7 @@ class MinEuclideanDistBlock(nn.Module):
         self.shapelets = nn.Parameter(shapelets).contiguous()
         # otherwise gradients will not be backpropagated
         self.shapelets.retain_grad()
+        _register_block_backward_profiling(self, "euclidean")
 
     def forward(self, x, masking=False):
 
@@ -79,7 +138,7 @@ class MinEuclideanDistBlock(nn.Module):
 
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
-            return x
+            return _attach_backward_tensor_hook(self, x)
 
         if length not in logs.block_forward_stats_by_type["euclidean"]:
             logs.block_forward_stats_by_type["euclidean"][length] = {
@@ -95,7 +154,7 @@ class MinEuclideanDistBlock(nn.Module):
             stats["peak_mem"] = torch.cuda.max_memory_allocated() - pre_mem
             stats["final_mem"] = 0
 
-        return x
+        return _attach_backward_tensor_hook(self, x)
 
 
 class MaxCosineSimilarityBlock(nn.Module):
@@ -116,6 +175,7 @@ class MaxCosineSimilarityBlock(nn.Module):
         self.shapelets = nn.Parameter(shapelets).contiguous()
         # otherwise gradients will not be backpropagated
         self.shapelets.retain_grad()
+        _register_block_backward_profiling(self, "cosine")
 
     def forward(self, x, masking=False):
         start_time = time.time()
@@ -174,7 +234,7 @@ class MaxCosineSimilarityBlock(nn.Module):
 
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
-            return x
+            return _attach_backward_tensor_hook(self, x)
 
         if length not in logs.block_forward_stats_by_type["cosine"]:
             logs.block_forward_stats_by_type["cosine"][length] = {
@@ -191,7 +251,7 @@ class MaxCosineSimilarityBlock(nn.Module):
         if stats["peak_mem"] is None:
             stats["peak_mem"] = torch.cuda.max_memory_allocated() - pre_mem
             stats["final_mem"] = 0
-        return x
+        return _attach_backward_tensor_hook(self, x)
 
 
 class MaxCrossCorrelationBlock(nn.Module):
@@ -205,6 +265,7 @@ class MaxCrossCorrelationBlock(nn.Module):
         self.to_cuda = to_cuda
         if self.to_cuda:
             self.cuda()
+        _register_block_backward_profiling(self, "cross")
 
     def forward(self, x, masking=False):
         start_time = time.time()
@@ -222,7 +283,8 @@ class MaxCrossCorrelationBlock(nn.Module):
 
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
-            return x.transpose(2, 1)
+            out = x.transpose(2, 1)
+            return _attach_backward_tensor_hook(self, out)
 
         if length not in logs.block_forward_stats_by_type['cross']:
             logs.block_forward_stats_by_type['cross'][length] = {
@@ -235,7 +297,7 @@ class MaxCrossCorrelationBlock(nn.Module):
             stats["forward_total_time"] += duration
             stats["forward_calls"] += 1
 
-        return x.transpose(2, 1)
+        return _attach_backward_tensor_hook(self, x.transpose(2, 1))
 
 
 class ShapeletsDistBlocks(nn.Module):

@@ -4,6 +4,12 @@ block_forward_stats_by_type = {
     "cross": {}
 }
 
+block_backward_stats_by_type = {
+    "euclidean": {},
+    "cosine": {},
+    "cross": {}
+}
+
 # 记录各类模块参数显存 (单位：Byte)
 block_param_memory_by_type = {
     "euclidean": {},
