@@ -5,9 +5,15 @@
 用法:
   python profiler_trace_plot.py /path/to/chrome_trace.json
   python profiler_trace_plot.py trace.json -o ../trace --prefix CL. train.
-  python profiler_trace_plot.py trace.json --zoom-seconds 2.0   # 窗宽 1.5～2.0 秒，默认 1.5
+  # 下图横轴为相对 trace 起点的绝对时刻区间，默认 [1.5, 2.0] 秒：
+  python profiler_trace_plot.py trace.json --zoom-from 1.5 --zoom-to 2.0
 
 依赖: matplotlib, numpy
+
+关于 Profiler 里 shapelet 相关区间名称：
+  - 「shapelets/L…/类名」：ShapeletsDistBlocks.forward 里 record_function，**前向**每个子块。
+  - 「shapelets_bw/L…/类名」：各 DistBlock 上 register_full_backward_pre/post_hook
+    配对的 record_function，**反向**穿过该子模块 autograd 的阶段（PyTorch 1.13+）。
 """
 from __future__ import annotations
 
@@ -27,17 +33,60 @@ DEFAULT_SPAN_PREFIXES: Tuple[str, ...] = (
     "model/",
     "mix/",
     "shapelets/",
+    "shapelets_bw/",
 )
 
-# 下图局部放大横轴宽度（秒）：限定在 [1.5, 2.0]，默认取 1.5（更放大）
-ZOOM_DURATION_MIN_S = 1.5
-ZOOM_DURATION_MAX_S = 2.0
-DEFAULT_ZOOM_DURATION_S = ZOOM_DURATION_MIN_S
+# 下图局部放大：横轴为相对 trace 起点的绝对时刻 [t0, t1]（秒），默认 1.5～2.0
+DEFAULT_ZOOM_FROM_S = 1.5
+DEFAULT_ZOOM_TO_S = 2.0
 
 
-def clamp_zoom_duration_s(seconds: float) -> float:
-    """将局部放大窗宽限制在用户指定的 1.5～2.0 秒内。"""
-    return float(max(ZOOM_DURATION_MIN_S, min(ZOOM_DURATION_MAX_S, float(seconds))))
+def configure_matplotlib_chinese_font() -> None:
+    """
+    配置可显示中文的字体，避免标题/图例/坐标轴出现方框。
+    按顺序尝试常见系统字体；并关闭 unicode 负号用 ASCII 减号，避免负号乱码。
+    """
+    import matplotlib.pyplot as plt
+
+    # 顺序即回退链：macOS 常见 PingFang / Hiragino；Windows 雅黑/黑体；Linux Noto/文泉驿
+    plt.rcParams["font.sans-serif"] = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "Heiti SC",
+        "STHeiti",
+        "Songti SC",
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        "WenQuanYi Micro Hei",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
+
+def zoom_xlim_absolute(
+    rel_s: np.ndarray,
+    zoom_from_s: float,
+    zoom_to_s: float,
+) -> Tuple[float, float]:
+    """
+    下图使用固定时刻区间 [zoom_from_s, zoom_to_s]（与全景图相同的相对时间轴），
+    再与当前 trace 的 [rel_s[0], rel_s[-1]] 求交；若交为空则退回全区间。
+    """
+    if rel_s.size == 0:
+        return zoom_from_s, zoom_to_s
+    t_min = float(np.min(rel_s))
+    t_max = float(np.max(rel_s))
+    x0, x1 = float(zoom_from_s), float(zoom_to_s)
+    if x0 > x1:
+        x0, x1 = x1, x0
+    x0 = max(x0, t_min)
+    x1 = min(x1, t_max)
+    if x1 <= x0:
+        return t_min, t_max
+    return x0, x1
 
 
 @dataclass
@@ -205,38 +254,6 @@ def _span_name_to_color(span_names: Sequence[str]) -> dict:
     return {name: cmap((i % 20) / 20.0) for i, name in enumerate(unique)}
 
 
-def _zoom_xlim_around_peaks(
-    rel_s: np.ndarray,
-    peak_times: Sequence[float],
-    zoom_duration_s: float,
-) -> Tuple[float, float]:
-    """
-    以峰值时刻簇的中心为锚，取固定宽度 zoom_duration_s 的横轴窗口；
-    若 trace 更短则退回全区间；窗口超出 trace 时平移到边界内。
-    """
-    t_min = float(rel_s[0])
-    t_max = float(rel_s[-1])
-    span = t_max - t_min
-    if span <= 0:
-        return t_min, t_max
-
-    lo, hi = min(peak_times), max(peak_times)
-    center = (lo + hi) / 2.0
-    width = float(zoom_duration_s)
-    if width >= span:
-        return t_min, t_max
-
-    xz0 = center - width / 2.0
-    xz1 = center + width / 2.0
-    if xz0 < t_min:
-        xz0 = t_min
-        xz1 = t_min + width
-    elif xz1 > t_max:
-        xz1 = t_max
-        xz0 = t_max - width
-    return xz0, xz1
-
-
 def _draw_single_panel(
     ax,
     rel_s: np.ndarray,
@@ -315,16 +332,17 @@ def plot_memory_with_spans(
     span_peaks: Sequence[SpanPeakResult],
     output_path: str,
     title: str = "CUDA memory vs record_function spans",
-    zoom_duration_s: float = DEFAULT_ZOOM_DURATION_S,
+    zoom_from_s: float = DEFAULT_ZOOM_FROM_S,
+    zoom_to_s: float = DEFAULT_ZOOM_TO_S,
 ) -> None:
-    zoom_duration_s = clamp_zoom_duration_s(zoom_duration_s)
-
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+
+    configure_matplotlib_chinese_font()
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
 
@@ -365,11 +383,10 @@ def plot_memory_with_spans(
         title=f"{title} — 全景",
     )
 
-    # 局部放大：窗宽 clamp 到 1.5～2.0s，居中于峰值簇
+    # 局部放大：固定相对时刻 [zoom_from_s, zoom_to_s]（默认 1.5～2.0 s），与数据范围求交
     g_idx = int(np.argmax(v_gb))
     g_t = float(rel_s[g_idx])
-    peak_times = [g_t] + [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
-    xz0, xz1 = _zoom_xlim_around_peaks(rel_s, peak_times, zoom_duration_s)
+    xz0, xz1 = zoom_xlim_absolute(rel_s, zoom_from_s, zoom_to_s)
 
     zm = (rel_s >= xz0) & (rel_s <= xz1)
     if np.any(zm):
@@ -398,7 +415,7 @@ def plot_memory_with_spans(
         t0,
         name_to_color,
         annotate_global=True,
-        title=f"峰值附近放大（窗宽 {xz1 - xz0:.3f} s，横轴 [{xz0:.4f}, {xz1:.4f}] s）",
+        title=f"局部放大：相对时刻 [{xz0:.4f}, {xz1:.4f}] s（请求 [{zoom_from_s:.2f}, {zoom_to_s:.2f}] s 与数据求交）",
         xlim=(xz0, xz1),
         ylim=ylim_zoom,
     )
@@ -481,7 +498,8 @@ def process_trace_file(
     span_prefixes: Optional[Sequence[str]] = None,
     require_device_cuda: bool = True,
     basename: Optional[str] = None,
-    zoom_duration_s: float = DEFAULT_ZOOM_DURATION_S,
+    zoom_from_s: float = DEFAULT_ZOOM_FROM_S,
+    zoom_to_s: float = DEFAULT_ZOOM_TO_S,
 ) -> Tuple[str, str]:
     """
     解析 trace，写 PNG 与峰值摘要 TXT。返回 (png_path, summary_path)。
@@ -536,7 +554,8 @@ def process_trace_file(
         span_peaks,
         png_path,
         title=f"Memory vs spans — {stem}",
-        zoom_duration_s=zoom_duration_s,
+        zoom_from_s=zoom_from_s,
+        zoom_to_s=zoom_to_s,
     )
 
     return png_path, txt_path
@@ -563,14 +582,18 @@ def build_argparser() -> argparse.ArgumentParser:
         help="不强制 Device Type==1（部分 trace 格式不同）",
     )
     p.add_argument(
-        "--zoom-seconds",
+        "--zoom-from",
         type=float,
-        default=DEFAULT_ZOOM_DURATION_S,
+        default=DEFAULT_ZOOM_FROM_S,
         metavar="SEC",
-        help=(
-            "下图横轴放大窗口宽度（秒），仅允许 1.5～2.0，超出会自动钳制；"
-            "默认 %(default)s（最放大）；可传 2.0 略放宽"
-        ),
+        help="下图横轴起始相对时刻（秒），默认 %(default)s",
+    )
+    p.add_argument(
+        "--zoom-to",
+        type=float,
+        default=DEFAULT_ZOOM_TO_S,
+        metavar="SEC",
+        help="下图横轴结束相对时刻（秒），默认 %(default)s",
     )
     return p
 
@@ -578,18 +601,13 @@ def build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argparser().parse_args()
     prefixes = tuple(args.prefix) if args.prefix else None
-    z_raw = args.zoom_seconds
-    z = clamp_zoom_duration_s(z_raw)
-    if z != z_raw:
-        print(
-            f"Note: --zoom-seconds {z_raw} 已钳制为 {z}（仅支持 {ZOOM_DURATION_MIN_S}～{ZOOM_DURATION_MAX_S}）"
-        )
     png, txt = process_trace_file(
         args.trace_json,
         args.output_dir,
         span_prefixes=prefixes,
         require_device_cuda=not args.no_device_filter,
-        zoom_duration_s=z,
+        zoom_from_s=args.zoom_from,
+        zoom_to_s=args.zoom_to,
     )
     print(f"Wrote {png}\n{txt}")
 

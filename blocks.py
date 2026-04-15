@@ -57,6 +57,29 @@ def _make_block_backward_post_hook(dist_type: str):
     return post_hook
 
 
+def _backward_profiler_label(module: nn.Module) -> str:
+    """与 forward 中 shapelets/... 对称，便于在 trace 里区分前向/反向。"""
+    return f"shapelets_bw/L{module.shapelets_size}/{module.__class__.__name__}"
+
+
+def _exit_backward_record_function(module: nn.Module) -> None:
+    ctx = getattr(module, "_profiler_bw_rf_ctx", None)
+    if ctx is not None:
+        module._profiler_bw_rf_ctx = None
+        ctx.__exit__(None, None, None)
+
+
+def _make_backward_profiler_pre_hook(profiler_label: str):
+    def pre_hook(module, grad_output):
+        if not module.training:
+            return
+        ctx = record_function(profiler_label)
+        ctx.__enter__()
+        module._profiler_bw_rf_ctx = ctx
+
+    return pre_hook
+
+
 def _attach_backward_tensor_hook(module, tensor):
     if module.to_cuda and module.training and torch.cuda.is_available():
         tensor.register_hook(lambda g: _backward_grad_hook(module, g))
@@ -66,7 +89,20 @@ def _attach_backward_tensor_hook(module, tensor):
 def _register_block_backward_profiling(module, dist_type: str):
     module._bw_warmup_done = False
     module._bw_t0 = None
-    module.register_full_backward_hook(_make_block_backward_post_hook(dist_type))
+    module._profiler_bw_rf_ctx = None
+
+    stats_post = _make_block_backward_post_hook(dist_type)
+
+    def combined_post_hook(m, grad_input, grad_output):
+        _exit_backward_record_function(m)
+        stats_post(m, grad_input, grad_output)
+
+    # pre + post 配对，使 record_function 覆盖该模块整条反向（需 PyTorch 1.13+）
+    if hasattr(module, "register_full_backward_pre_hook"):
+        module.register_full_backward_pre_hook(
+            _make_backward_profiler_pre_hook(_backward_profiler_label(module))
+        )
+    module.register_full_backward_hook(combined_post_hook)
 
 
 def _calc_parameter_memory_bytes(module: nn.Module) -> int:
