@@ -4,6 +4,7 @@ import warnings
 import logging
 import numpy as np
 import torch
+from torch.profiler import record_function
 from manager import Manager, cast_forward
 import tsaug
 from torch import nn
@@ -252,99 +253,99 @@ class LearningShapeletsCL:
 
         with torch.autograd.set_detect_anomaly(True):
 
+            with record_function("CL.forward_q"):
+                q = self.model(x_q, optimize=None, masking=False)
+            with record_function("CL.forward_k"):
+                k = self.model(x_k, optimize=None, masking=False)
 
-            q = self.model(x_q, optimize=None, masking=False)
-            # print("-----------------------------------------------")
-            k = self.model(x_k, optimize=None, masking=False)
-            # print("-----------------------------------------------")
+            with record_function("CL.loss_compute"):
+                torch.cuda.synchronize()
+                start = time.time()
+                q = nn.functional.normalize(q, dim=1)
+                k = nn.functional.normalize(k, dim=1)
 
-            torch.cuda.synchronize()
-            start = time.time()
-            q = nn.functional.normalize(q, dim=1)
-            k = nn.functional.normalize(k, dim=1)
-
-            logits = torch.einsum('nc,ck->nk', [q, k.t()])
-            logits /= self.T
-            labels = torch.arange(q.shape[0], dtype=torch.long)
-
-            if self.to_cuda:
-                labels = labels.cuda()
-
-            loss = self.loss_func(logits, labels)
-
-            q_sum = None
-            q_square_sum = None
-
-            k_sum = None
-            k_square_sum = None
-
-            loss_sdl = 0
-            c_normalising_factor_q = self.alpha * c_normalising_factor_q + 1
-
-            c_normalising_factor_k = self.alpha * c_normalising_factor_k + 1
-
-            for length_i in range(num_shapelet_lengths):
-                qi = q[:, length_i * num_shapelet_per_length: (length_i + 1) * num_shapelet_per_length]
-                ki = k[:, length_i * num_shapelet_per_length: (length_i + 1) * num_shapelet_per_length]
-
-                logits = torch.einsum('nc,ck->nk',
-                                      [nn.functional.normalize(qi, dim=1), nn.functional.normalize(ki, dim=1).t()])
+                logits = torch.einsum('nc,ck->nk', [q, k.t()])
                 logits /= self.T
-                loss += self.loss_func(logits, labels)
+                labels = torch.arange(q.shape[0], dtype=torch.long)
 
-                if q_sum == None:
-                    q_sum = qi
-                    q_square_sum = qi * qi
-                else:
-                    q_sum = q_sum + qi
-                    q_square_sum = q_square_sum + qi * qi
+                if self.to_cuda:
+                    labels = labels.cuda()
 
-                C_mini_q = torch.matmul(qi.t(), qi) / (qi.shape[0] - 1)
-                C_accu_t_q = self.alpha * C_accu_q[length_i] + C_mini_q
-                C_appx_q = C_accu_t_q / c_normalising_factor_q
-                loss_sdl += torch.norm(
-                    C_appx_q.flatten()[:-1].view(C_appx_q.shape[0] - 1, C_appx_q.shape[0] + 1)[:, 1:], 1).sum()
-                # print(length_i)
-                C_accu_q[length_i] = C_accu_t_q.detach()
+                loss = self.loss_func(logits, labels)
 
-                if k_sum == None:
-                    k_sum = ki
-                    k_square_sum = ki * ki
-                else:
-                    k_sum = k_sum + ki
-                    k_square_sum = k_square_sum + ki * ki
+                q_sum = None
+                q_square_sum = None
 
-                C_mini_k = torch.matmul(ki.t(), ki) / (ki.shape[0] - 1)
-                C_accu_t_k = self.alpha * C_accu_k[length_i] + C_mini_k
-                C_appx_k = C_accu_t_k / c_normalising_factor_k
-                loss_sdl += torch.norm(
-                    C_appx_k.flatten()[:-1].view(C_appx_k.shape[0] - 1, C_appx_k.shape[0] + 1)[:, 1:], 1).sum()
-                # print(length_i)
-                C_accu_k[length_i] = C_accu_t_k.detach()
+                k_sum = None
+                k_square_sum = None
 
-            loss_cca = 0.5 * torch.sum(q_square_sum - q_sum * q_sum / num_shapelet_lengths) + 0.5 * torch.sum(
-                k_square_sum - k_sum * k_sum / num_shapelet_lengths)
+                loss_sdl = 0
+                c_normalising_factor_q = self.alpha * c_normalising_factor_q + 1
 
-            loss += self.l3 * (loss_cca + self.l4 * loss_sdl)
+                c_normalising_factor_k = self.alpha * c_normalising_factor_k + 1
 
-            self.optimizer.zero_grad()
-            #
-            # if self.current_epoch == 0:  # 假设你设置了 self.current_epoch
-            #     torch.cuda.synchronize()
-            #     backward_start = time.time()
-            #     loss.backward()
-            #     torch.cuda.synchronize()
-            #     backward_end = time.time()
-            #     global global_backward_total_time
-            #     global_backward_total_time += (backward_end - backward_start)
-            # else:
-            #     loss.backward()
+                for length_i in range(num_shapelet_lengths):
+                    qi = q[:, length_i * num_shapelet_per_length: (length_i + 1) * num_shapelet_per_length]
+                    ki = k[:, length_i * num_shapelet_per_length: (length_i + 1) * num_shapelet_per_length]
 
-            loss.backward()  # 0.2s
+                    logits = torch.einsum('nc,ck->nk',
+                                          [nn.functional.normalize(qi, dim=1), nn.functional.normalize(ki, dim=1).t()])
+                    logits /= self.T
+                    loss += self.loss_func(logits, labels)
 
+                    if q_sum == None:
+                        q_sum = qi
+                        q_square_sum = qi * qi
+                    else:
+                        q_sum = q_sum + qi
+                        q_square_sum = q_square_sum + qi * qi
 
+                    C_mini_q = torch.matmul(qi.t(), qi) / (qi.shape[0] - 1)
+                    C_accu_t_q = self.alpha * C_accu_q[length_i] + C_mini_q
+                    C_appx_q = C_accu_t_q / c_normalising_factor_q
+                    loss_sdl += torch.norm(
+                        C_appx_q.flatten()[:-1].view(C_appx_q.shape[0] - 1, C_appx_q.shape[0] + 1)[:, 1:], 1).sum()
+                    # print(length_i)
+                    C_accu_q[length_i] = C_accu_t_q.detach()
 
-            self.optimizer.step()
+                    if k_sum == None:
+                        k_sum = ki
+                        k_square_sum = ki * ki
+                    else:
+                        k_sum = k_sum + ki
+                        k_square_sum = k_square_sum + ki * ki
+
+                    C_mini_k = torch.matmul(ki.t(), ki) / (ki.shape[0] - 1)
+                    C_accu_t_k = self.alpha * C_accu_k[length_i] + C_mini_k
+                    C_appx_k = C_accu_t_k / c_normalising_factor_k
+                    loss_sdl += torch.norm(
+                        C_appx_k.flatten()[:-1].view(C_appx_k.shape[0] - 1, C_appx_k.shape[0] + 1)[:, 1:], 1).sum()
+                    # print(length_i)
+                    C_accu_k[length_i] = C_accu_t_k.detach()
+
+                loss_cca = 0.5 * torch.sum(q_square_sum - q_sum * q_sum / num_shapelet_lengths) + 0.5 * torch.sum(
+                    k_square_sum - k_sum * k_sum / num_shapelet_lengths)
+
+                loss += self.l3 * (loss_cca + self.l4 * loss_sdl)
+
+            with record_function("CL.backward"):
+                self.optimizer.zero_grad()
+                #
+                # if self.current_epoch == 0:  # 假设你设置了 self.current_epoch
+                #     torch.cuda.synchronize()
+                #     backward_start = time.time()
+                #     loss.backward()
+                #     torch.cuda.synchronize()
+                #     backward_end = time.time()
+                #     global global_backward_total_time
+                #     global_backward_total_time += (backward_end - backward_start)
+                # else:
+                #     loss.backward()
+
+                loss.backward()  # 0.2s
+
+            with record_function("CL.optimizer_step"):
+                self.optimizer.step()
 
 
 
@@ -470,23 +471,24 @@ class LearningShapeletsCL:
                     self.column = x.shape[1]
                     self.length = x.shape[2]
                     prof.step()
-                    # check if training should be done with regularizer
-                    if self.to_cuda:
-                        x = x.cuda()
+                    with record_function("train.batch"):
+                        # check if training should be done with regularizer
+                        if self.to_cuda:
+                            with record_function("train.cuda_HtoD"):
+                                x = x.cuda()
 
-
-                    if not self.use_regularizer:
-                        torch.cuda.synchronize()
-                        start_time = time.time()
-                        current_loss_ce, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k = self.update_CL(
-                            x, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k)
-                        torch.cuda.synchronize()
-                        if(self.current_epoch == 1):
-
-                            logs.global_backward_total_time += time.time() - start_time
-                        losses_ce.append(current_loss_ce)
-                    else:
-                        pass
+                        if not self.use_regularizer:
+                            torch.cuda.synchronize()
+                            start_time = time.time()
+                            with record_function("train.update_CL"):
+                                current_loss_ce, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k = self.update_CL(
+                                    x, C_accu_q, c_normalising_factor_q, C_accu_k, c_normalising_factor_k)
+                            torch.cuda.synchronize()
+                            if self.current_epoch == 1:
+                                logs.global_backward_total_time += time.time() - start_time
+                            losses_ce.append(current_loss_ce)
+                        else:
+                            pass
 
                 if self.current_epoch== 1:
                     self.estimate_backward_time_bias()

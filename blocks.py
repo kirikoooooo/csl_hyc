@@ -3,6 +3,7 @@ import time
 import numpy as np
 import torch
 from torch import nn
+from torch.profiler import record_function
 from torch.utils.checkpoint import checkpoint
 from collections import OrderedDict
 
@@ -362,13 +363,13 @@ class ShapeletsDistBlocks(nn.Module):
         #         out = torch.cat((out, block(x, masking)), dim=2)
         for i, (shapelets_size, _) in enumerate(self.shapelets_size_and_len.items()):
             block = self.blocks[i]
-
-            if self.checkpoint and self.dist_measure == 'euclidean' and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths:
-                out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
-            elif self.checkpoint and self.dist_measure == 'cosine' and shapelets_size in logs.cosine_checkpoint_shapelet_lengths:
-                out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
-            else:
-                out = torch.cat((out, block(x, masking)), dim=2)
+            with record_function(f"shapelets/L{shapelets_size}/{block.__class__.__name__}"):
+                if self.checkpoint and self.dist_measure == 'euclidean' and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths:
+                    out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
+                elif self.checkpoint and self.dist_measure == 'cosine' and shapelets_size in logs.cosine_checkpoint_shapelet_lengths:
+                    out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
+                else:
+                    out = torch.cat((out, block(x, masking)), dim=2)
 
         return out
 
@@ -427,17 +428,20 @@ class LearningShapeletsModel(nn.Module):
 
     def forward(self, x, optimize='acc', masking=False):
 
-        x = self.shapelets_blocks(x, masking)
+        with record_function("model/shapelets_blocks"):
+            x = self.shapelets_blocks(x, masking)
 
         x = torch.squeeze(x, 1)
 
         # test torch.cat
         # x = torch.cat((x[:, :x.shape[1] // 2], x[:, x.shape[1] // 2:]), dim=1)
 
-        x = self.projection(x)
+        with record_function("model/bn_projection"):
+            x = self.projection(x)
 
         if optimize == 'acc':
-            x = self.linear(x)
+            with record_function("model/linear"):
+                x = self.linear(x)
 
         return x
 
@@ -500,29 +504,32 @@ class LearningShapeletsModelMixDistances(nn.Module):
 
         out = torch.tensor([], dtype=torch.float).cuda() if self.to_cuda else torch.tensor([], dtype=torch.float)
 
-        x_out = self.shapelets_euclidean(x, masking)
-        x_out = torch.squeeze(x_out, 1)
-        # x_out = torch.nn.functional.normalize(x_out, dim=1)
-        x_out = self.bn1(x_out)
-        x_out = x_out.reshape(n_samples, num_lengths, -1)
-        # print(x_out.shape)
-        out = torch.cat((out, x_out), dim=2)
+        with record_function("mix/shapelets_euclidean"):
+            x_out = self.shapelets_euclidean(x, masking)
+            x_out = torch.squeeze(x_out, 1)
+            # x_out = torch.nn.functional.normalize(x_out, dim=1)
+            x_out = self.bn1(x_out)
+            x_out = x_out.reshape(n_samples, num_lengths, -1)
+            # print(x_out.shape)
+            out = torch.cat((out, x_out), dim=2)
 
-        x_out = self.shapelets_cosine(x, masking)
-        x_out = torch.squeeze(x_out, 1)
-        # x_out = torch.nn.functional.normalize(x_out, dim=1)
-        x_out = self.bn2(x_out)
-        x_out = x_out.reshape(n_samples, num_lengths, -1)
-        # print(x_out.shape)
-        out = torch.cat((out, x_out), dim=2)
+        with record_function("mix/shapelets_cosine"):
+            x_out = self.shapelets_cosine(x, masking)
+            x_out = torch.squeeze(x_out, 1)
+            # x_out = torch.nn.functional.normalize(x_out, dim=1)
+            x_out = self.bn2(x_out)
+            x_out = x_out.reshape(n_samples, num_lengths, -1)
+            # print(x_out.shape)
+            out = torch.cat((out, x_out), dim=2)
 
-        x_out = self.shapelets_cross_correlation(x, masking)
-        x_out = torch.squeeze(x_out, 1)
-        # x_out = torch.nn.functional.normalize(x_out, dim=1)
-        x_out = self.bn3(x_out)
-        x_out = x_out.reshape(n_samples, num_lengths, -1)
-        # print(x_out.shape)
-        out = torch.cat((out, x_out), dim=2)
+        with record_function("mix/shapelets_cross"):
+            x_out = self.shapelets_cross_correlation(x, masking)
+            x_out = torch.squeeze(x_out, 1)
+            # x_out = torch.nn.functional.normalize(x_out, dim=1)
+            x_out = self.bn3(x_out)
+            x_out = x_out.reshape(n_samples, num_lengths, -1)
+            # print(x_out.shape)
+            out = torch.cat((out, x_out), dim=2)
 
         out = out.reshape(n_samples, -1)
 
@@ -530,7 +537,8 @@ class LearningShapeletsModelMixDistances(nn.Module):
         # out = self.projection(out)
 
         if optimize == 'acc':
-            out = self.linear(out)
+            with record_function("mix/linear_head"):
+                out = self.linear(out)
         # end_time = time.time()
         # print(f"{end_time - start_time:.6f} ")
 
