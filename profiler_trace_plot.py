@@ -5,6 +5,7 @@
 用法:
   python profiler_trace_plot.py /path/to/chrome_trace.json
   python profiler_trace_plot.py trace.json -o ../trace --prefix CL. train.
+  python profiler_trace_plot.py trace.json --zoom-seconds 2.0   # 窗宽 1.5～2.0 秒，默认 1.5
 
 依赖: matplotlib, numpy
 """
@@ -28,8 +29,15 @@ DEFAULT_SPAN_PREFIXES: Tuple[str, ...] = (
     "shapelets/",
 )
 
-# 下图局部放大横轴宽度（秒），常用 1.5～2.0（默认 2.0）
-DEFAULT_ZOOM_DURATION_S = 2.0
+# 下图局部放大横轴宽度（秒）：限定在 [1.5, 2.0]，默认取 1.5（更放大）
+ZOOM_DURATION_MIN_S = 1.5
+ZOOM_DURATION_MAX_S = 2.0
+DEFAULT_ZOOM_DURATION_S = ZOOM_DURATION_MIN_S
+
+
+def clamp_zoom_duration_s(seconds: float) -> float:
+    """将局部放大窗宽限制在用户指定的 1.5～2.0 秒内。"""
+    return float(max(ZOOM_DURATION_MIN_S, min(ZOOM_DURATION_MAX_S, float(seconds))))
 
 
 @dataclass
@@ -309,6 +317,8 @@ def plot_memory_with_spans(
     title: str = "CUDA memory vs record_function spans",
     zoom_duration_s: float = DEFAULT_ZOOM_DURATION_S,
 ) -> None:
+    zoom_duration_s = clamp_zoom_duration_s(zoom_duration_s)
+
     import matplotlib
 
     matplotlib.use("Agg")
@@ -355,7 +365,7 @@ def plot_memory_with_spans(
         title=f"{title} — 全景",
     )
 
-    # 局部放大：固定宽度 zoom_duration_s（默认 2.0s，建议 1.5～2.0），居中于峰值簇
+    # 局部放大：窗宽 clamp 到 1.5～2.0s，居中于峰值簇
     g_idx = int(np.argmax(v_gb))
     g_t = float(rel_s[g_idx])
     peak_times = [g_t] + [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
@@ -557,7 +567,10 @@ def build_argparser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_ZOOM_DURATION_S,
         metavar="SEC",
-        help="下图横轴放大窗口宽度（秒），建议 1.5～2.0；默认 %(default)s",
+        help=(
+            "下图横轴放大窗口宽度（秒），仅允许 1.5～2.0，超出会自动钳制；"
+            "默认 %(default)s（最放大）；可传 2.0 略放宽"
+        ),
     )
     return p
 
@@ -565,12 +578,18 @@ def build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argparser().parse_args()
     prefixes = tuple(args.prefix) if args.prefix else None
+    z_raw = args.zoom_seconds
+    z = clamp_zoom_duration_s(z_raw)
+    if z != z_raw:
+        print(
+            f"Note: --zoom-seconds {z_raw} 已钳制为 {z}（仅支持 {ZOOM_DURATION_MIN_S}～{ZOOM_DURATION_MAX_S}）"
+        )
     png, txt = process_trace_file(
         args.trace_json,
         args.output_dir,
         span_prefixes=prefixes,
         require_device_cuda=not args.no_device_filter,
-        zoom_duration_s=args.zoom_seconds,
+        zoom_duration_s=z,
     )
     print(f"Wrote {png}\n{txt}")
 
