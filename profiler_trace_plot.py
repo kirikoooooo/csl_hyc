@@ -28,6 +28,9 @@ DEFAULT_SPAN_PREFIXES: Tuple[str, ...] = (
     "shapelets/",
 )
 
+# 下图局部放大横轴宽度（秒），常用 1.5～2.0（默认 2.0）
+DEFAULT_ZOOM_DURATION_S = 2.0
+
 
 @dataclass
 class MemorySample:
@@ -194,6 +197,38 @@ def _span_name_to_color(span_names: Sequence[str]) -> dict:
     return {name: cmap((i % 20) / 20.0) for i, name in enumerate(unique)}
 
 
+def _zoom_xlim_around_peaks(
+    rel_s: np.ndarray,
+    peak_times: Sequence[float],
+    zoom_duration_s: float,
+) -> Tuple[float, float]:
+    """
+    以峰值时刻簇的中心为锚，取固定宽度 zoom_duration_s 的横轴窗口；
+    若 trace 更短则退回全区间；窗口超出 trace 时平移到边界内。
+    """
+    t_min = float(rel_s[0])
+    t_max = float(rel_s[-1])
+    span = t_max - t_min
+    if span <= 0:
+        return t_min, t_max
+
+    lo, hi = min(peak_times), max(peak_times)
+    center = (lo + hi) / 2.0
+    width = float(zoom_duration_s)
+    if width >= span:
+        return t_min, t_max
+
+    xz0 = center - width / 2.0
+    xz1 = center + width / 2.0
+    if xz0 < t_min:
+        xz0 = t_min
+        xz1 = t_min + width
+    elif xz1 > t_max:
+        xz1 = t_max
+        xz0 = t_max - width
+    return xz0, xz1
+
+
 def _draw_single_panel(
     ax,
     rel_s: np.ndarray,
@@ -272,6 +307,7 @@ def plot_memory_with_spans(
     span_peaks: Sequence[SpanPeakResult],
     output_path: str,
     title: str = "CUDA memory vs record_function spans",
+    zoom_duration_s: float = DEFAULT_ZOOM_DURATION_S,
 ) -> None:
     import matplotlib
 
@@ -319,19 +355,11 @@ def plot_memory_with_spans(
         title=f"{title} — 全景",
     )
 
-    # 局部放大：以全局峰值时刻与各区间峰值时刻为锚，取并集后加边距
+    # 局部放大：固定宽度 zoom_duration_s（默认 2.0s，建议 1.5～2.0），居中于峰值簇
     g_idx = int(np.argmax(v_gb))
     g_t = float(rel_s[g_idx])
     peak_times = [g_t] + [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
-    lo, hi = min(peak_times), max(peak_times)
-    duration = float(rel_s[-1] - rel_s[0]) if rel_s.size > 1 else 1.0
-    half_span = max((hi - lo) * 0.65, duration * 0.05, 5e-5)
-    xz0 = max(float(rel_s[0]), lo - half_span)
-    xz1 = min(float(rel_s[-1]), hi + half_span)
-    if xz1 <= xz0:
-        mid = (lo + hi) / 2
-        half_span = max(duration * 0.03, 1e-4)
-        xz0, xz1 = mid - half_span, mid + half_span
+    xz0, xz1 = _zoom_xlim_around_peaks(rel_s, peak_times, zoom_duration_s)
 
     zm = (rel_s >= xz0) & (rel_s <= xz1)
     if np.any(zm):
@@ -360,7 +388,7 @@ def plot_memory_with_spans(
         t0,
         name_to_color,
         annotate_global=True,
-        title=f"峰值附近放大（横轴 [{xz0:.4f}, {xz1:.4f}] s）",
+        title=f"峰值附近放大（窗宽 {xz1 - xz0:.3f} s，横轴 [{xz0:.4f}, {xz1:.4f}] s）",
         xlim=(xz0, xz1),
         ylim=ylim_zoom,
     )
@@ -443,6 +471,7 @@ def process_trace_file(
     span_prefixes: Optional[Sequence[str]] = None,
     require_device_cuda: bool = True,
     basename: Optional[str] = None,
+    zoom_duration_s: float = DEFAULT_ZOOM_DURATION_S,
 ) -> Tuple[str, str]:
     """
     解析 trace，写 PNG 与峰值摘要 TXT。返回 (png_path, summary_path)。
@@ -497,6 +526,7 @@ def process_trace_file(
         span_peaks,
         png_path,
         title=f"Memory vs spans — {stem}",
+        zoom_duration_s=zoom_duration_s,
     )
 
     return png_path, txt_path
@@ -522,6 +552,13 @@ def build_argparser() -> argparse.ArgumentParser:
         action="store_true",
         help="不强制 Device Type==1（部分 trace 格式不同）",
     )
+    p.add_argument(
+        "--zoom-seconds",
+        type=float,
+        default=DEFAULT_ZOOM_DURATION_S,
+        metavar="SEC",
+        help="下图横轴放大窗口宽度（秒），建议 1.5～2.0；默认 %(default)s",
+    )
     return p
 
 
@@ -533,6 +570,7 @@ def main() -> None:
         args.output_dir,
         span_prefixes=prefixes,
         require_device_cuda=not args.no_device_filter,
+        zoom_duration_s=args.zoom_seconds,
     )
     print(f"Wrote {png}\n{txt}")
 
