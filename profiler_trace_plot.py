@@ -14,7 +14,6 @@ import argparse
 import json
 import os
 import re
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
@@ -184,6 +183,89 @@ def aggregate_peaks_by_name(span_peaks: Sequence[SpanPeakResult]) -> dict:
     return best
 
 
+def _span_name_to_color(span_names: Sequence[str]) -> dict:
+    """每个 record_function 名称固定一种颜色（图例与上下两图一致）。"""
+    import matplotlib.pyplot as plt
+
+    unique = sorted(set(span_names))
+    if not unique:
+        return {}
+    cmap = plt.get_cmap("tab20")
+    return {name: cmap((i % 20) / 20.0) for i, name in enumerate(unique)}
+
+
+def _draw_single_panel(
+    ax,
+    rel_s: np.ndarray,
+    v_gb: np.ndarray,
+    spans: Sequence[DurationSpan],
+    span_peaks: Sequence[SpanPeakResult],
+    t0: float,
+    name_to_color: dict,
+    *,
+    annotate_global: bool,
+    title: str,
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
+) -> None:
+    """绘制单幅显存阶梯曲线、record_function 浅色底纹、峰值散点。"""
+    ax.step(rel_s, v_gb, where="post", color="#2E86AB", lw=2)
+
+    for sp in spans:
+        c = name_to_color.get(sp.name, (0.7, 0.7, 0.7, 1.0))
+        s0 = (sp.ts_us - t0) / 1e6
+        s1 = (sp.end_us - t0) / 1e6
+        ax.axvspan(s0, s1, facecolor=c, alpha=0.22, edgecolor="none")
+
+    rel_peak_t = [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
+    rel_peak_v = [r.peak_gb for r in span_peaks]
+    if span_peaks:
+        ax.scatter(
+            rel_peak_t,
+            rel_peak_v,
+            c="#E94F37",
+            s=42,
+            zorder=5,
+            edgecolors="white",
+            linewidths=0.5,
+        )
+
+    g_idx = int(np.argmax(v_gb))
+    g_t = float(rel_s[g_idx])
+    g_v = float(v_gb[g_idx])
+    ax.scatter(
+        [g_t],
+        [g_v],
+        c="gold",
+        s=160,
+        zorder=6,
+        marker="*",
+        edgecolors="darkgoldenrod",
+        linewidths=0.8,
+    )
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    if annotate_global and rel_s.size > 0:
+        xa0, xa1 = ax.get_xlim()
+        dx = max((xa1 - xa0) * 0.08, 1e-9)
+        ax.annotate(
+            f"{g_v:.3f} GB",
+            xy=(g_t, g_v),
+            xytext=(g_t + dx, g_v + max(g_v * 0.04, 0.015)),
+            arrowprops=dict(arrowstyle="->", color="goldenrod", lw=1.2),
+            fontsize=9,
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel("时间 (s)")
+    ax.set_ylabel("已分配显存 (GB)")
+    ax.grid(alpha=0.3)
+
+
 def plot_memory_with_spans(
     samples: Sequence[MemorySample],
     spans: Sequence[DurationSpan],
@@ -195,6 +277,8 @@ def plot_memory_with_spans(
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
 
@@ -206,41 +290,137 @@ def plot_memory_with_spans(
     if spans:
         t0 = min(t0, min(s.ts_us for s in spans))
     rel_s = (t_us - t0) / 1e6
-    rel_peak_t = [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
-    rel_peak_v = [r.peak_gb for r in span_peaks]
 
-    plt.figure(figsize=(14, 6))
-    plt.step(rel_s, v_gb, where="post", color="#2E86AB", lw=2, label="CUDA allocated (trace)")
+    span_names = [s.name for s in spans]
+    name_to_color = _span_name_to_color(span_names)
 
-    cmap = plt.cm.tab20(np.linspace(0, 1, max(20, len(spans) + 1)))
-    for i, sp in enumerate(spans):
-        s0 = (sp.ts_us - t0) / 1e6
-        s1 = (sp.end_us - t0) / 1e6
-        plt.axvspan(s0, s1, color=cmap[i % len(cmap)], alpha=0.12)
-
-    # 标注各区间实例的峰值点（同名多次会出现多个点）
-    if span_peaks:
-        plt.scatter(rel_peak_t, rel_peak_v, c="#E94F37", s=36, zorder=5, label="Peak in span")
-
-    g_idx = int(np.argmax(v_gb))
-    g_t = rel_s[g_idx]
-    g_v = float(v_gb[g_idx])
-    plt.scatter([g_t], [g_v], c="gold", s=140, zorder=6, marker="*")
-    plt.annotate(
-        f"global {g_v:.3f} GB",
-        xy=(g_t, g_v),
-        xytext=(g_t + (rel_s[-1] - rel_s[0]) * 0.02, g_v + 0.02),
-        arrowprops=dict(arrowstyle="->", color="goldenrod", lw=1.2),
+    fig, (ax_top, ax_zoom) = plt.subplots(
+        2,
+        1,
+        figsize=(14, 11),
+        gridspec_kw={"height_ratios": [1.0, 1.2]},
+    )
+    fig.suptitle(
+        "读图说明：浅色横条 = PyTorch record_function 标出的代码区间，颜色与底部图例「区间:」一致；"
+        "橙色圆点 = 落在该区间时间范围内的显存峰值；金星 = 全 trace 采样中的全局最大显存。",
         fontsize=10,
+        y=0.995,
     )
 
-    plt.title(title)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Allocated (GB)")
-    plt.grid(alpha=0.3)
-    plt.legend(loc="upper right")
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
+    _draw_single_panel(
+        ax_top,
+        rel_s,
+        v_gb,
+        spans,
+        span_peaks,
+        t0,
+        name_to_color,
+        annotate_global=True,
+        title=f"{title} — 全景",
+    )
+
+    # 局部放大：以全局峰值时刻与各区间峰值时刻为锚，取并集后加边距
+    g_idx = int(np.argmax(v_gb))
+    g_t = float(rel_s[g_idx])
+    peak_times = [g_t] + [(r.peak_t_us - t0) / 1e6 for r in span_peaks]
+    lo, hi = min(peak_times), max(peak_times)
+    duration = float(rel_s[-1] - rel_s[0]) if rel_s.size > 1 else 1.0
+    half_span = max((hi - lo) * 0.65, duration * 0.05, 5e-5)
+    xz0 = max(float(rel_s[0]), lo - half_span)
+    xz1 = min(float(rel_s[-1]), hi + half_span)
+    if xz1 <= xz0:
+        mid = (lo + hi) / 2
+        half_span = max(duration * 0.03, 1e-4)
+        xz0, xz1 = mid - half_span, mid + half_span
+
+    zm = (rel_s >= xz0) & (rel_s <= xz1)
+    if np.any(zm):
+        ylo = float(np.min(v_gb[zm]))
+        yhi = float(np.max(v_gb[zm]))
+    else:
+        ylo, yhi = float(np.min(v_gb)), float(np.max(v_gb))
+    for r in span_peaks:
+        tt = (r.peak_t_us - t0) / 1e6
+        if xz0 <= tt <= xz1:
+            ylo = min(ylo, r.peak_gb)
+            yhi = max(yhi, r.peak_gb)
+    if xz0 <= g_t <= xz1:
+        g_v = float(v_gb[g_idx])
+        ylo = min(ylo, g_v)
+        yhi = max(yhi, g_v)
+    pad_y = max((yhi - ylo) * 0.18, yhi * 0.03, 0.02)
+    ylim_zoom = (max(0.0, ylo - pad_y), yhi + pad_y)
+
+    _draw_single_panel(
+        ax_zoom,
+        rel_s,
+        v_gb,
+        spans,
+        span_peaks,
+        t0,
+        name_to_color,
+        annotate_global=True,
+        title=f"峰值附近放大（横轴 [{xz0:.4f}, {xz1:.4f}] s）",
+        xlim=(xz0, xz1),
+        ylim=ylim_zoom,
+    )
+
+    legend_elements = [
+        Line2D(
+            [0],
+            [0],
+            color="#2E86AB",
+            lw=2.5,
+            label="显存曲线（Chrome trace 中 [memory] / Total Allocated）",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="*",
+            color="none",
+            markerfacecolor="gold",
+            markeredgecolor="darkgoldenrod",
+            markeredgewidth=0.8,
+            markersize=14,
+            label="全局峰值：整条曲线上采样点的最大值",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor="#E94F37",
+            markeredgecolor="white",
+            markeredgewidth=0.6,
+            markersize=9,
+            label="区间内峰值：某 record_function 时间段内的最大显存",
+        ),
+    ]
+    for name in sorted(name_to_color.keys()):
+        c = name_to_color[name]
+        legend_elements.append(
+            Patch(
+                facecolor=c,
+                alpha=0.4,
+                edgecolor="gray",
+                linewidth=0.4,
+                label=f"区间: {name}",
+            )
+        )
+
+    ncol = 2 if len(legend_elements) > 10 else 1
+    fig.legend(
+        handles=legend_elements,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=ncol,
+        fontsize=8,
+        frameon=True,
+        title="图例（颜色含义）",
+        title_fontsize=9,
+    )
+    plt.tight_layout(rect=[0, 0.06, 1, 0.94])
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
