@@ -4,16 +4,19 @@
 
 用法:
   python profiler_trace_plot.py /path/to/chrome_trace.json
-  python profiler_trace_plot.py trace.json -o ../trace --prefix CL. train.
+  # 需要把前向区间也画进浅色条时自行指定前缀，例如：
+  python profiler_trace_plot.py trace.json --prefix shapelets/ model/ mix/ CL.forward_q CL.forward_k
   # 下图横轴为相对 trace 起点的绝对时刻区间，默认 [1.5, 2.0] 秒：
   python profiler_trace_plot.py trace.json --zoom-from 1.5 --zoom-to 2.0
 
 依赖: matplotlib, numpy
 
 关于 Profiler 里 shapelet 相关区间名称：
-  - 「shapelets/L…/类名」：ShapeletsDistBlocks.forward 里 record_function，**前向**每个子块。
-  - 「shapelets_bw/L…/类名」：各 DistBlock 上 register_full_backward_pre/post_hook
-    配对的 record_function，**反向**穿过该子模块 autograd 的阶段（PyTorch 1.13+）。
+  - 「shapelets/L…/类名」：**前向**子块（默认不在图中标色，除非 --prefix 包含 shapelets/）。
+  - 「shapelets_bw/L…/类名」：**反向**子块（默认会标色）。
+  若 trace 里只有一段大反向、没有各 shapelets_bw：多半是 **gradient checkpoint** 路径导致子模块
+  backward hook 不按块进 trace；跑 profile 前可设环境变量 **CSL_DETAIL_BW_IN_PROFILER=1**
+  （会临时禁用 ShapeletsDistBlocks 里的 checkpoint，显存会涨）。
 """
 from __future__ import annotations
 
@@ -26,15 +29,8 @@ from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-# 与本项目 train.py / blocks.py 中 record_function 命名一致的可选前缀
-DEFAULT_SPAN_PREFIXES: Tuple[str, ...] = (
-    "CL.",
-    "train.",
-    "model/",
-    "mix/",
-    "shapelets/",
-    "shapelets_bw/",
-)
+# 默认只解析/标注各 shapelet 子块的反向 record_function（前向需用 --prefix 自行加入）
+DEFAULT_SPAN_PREFIXES: Tuple[str, ...] = ("shapelets_bw/",)
 
 # 下图局部放大：横轴为相对 trace 起点的绝对时刻 [t0, t1]（秒），默认 1.5～2.0
 DEFAULT_ZOOM_FROM_S = 1.5
@@ -151,6 +147,7 @@ def extract_cuda_memory_samples(
 
 
 def default_span_name_filter(name: str) -> bool:
+    """默认仅保留各子块反向区间（shapelets_bw/）；前向不参与浅色条与图例。"""
     if not name or name == "[memory]":
         return False
     if name.startswith("ProfilerStep"):
@@ -365,8 +362,9 @@ def plot_memory_with_spans(
         gridspec_kw={"height_ratios": [1.0, 1.2]},
     )
     fig.suptitle(
-        "读图说明：浅色横条 = PyTorch record_function 标出的代码区间，颜色与底部图例「区间:」一致；"
-        "橙色圆点 = 落在该区间时间范围内的显存峰值；金星 = 全 trace 采样中的全局最大显存。",
+        "读图说明（默认仅反向子块）：浅色横条 = shapelets_bw/…；"
+        "颜色与图例「区间:」一致；橙色圆点 = 该段时间内显存峰值；金星 = 全 trace 最大采样。"
+        "缺块时请用 CSL_DETAIL_BW_IN_PROFILER=1 重采 trace；前向请加 --prefix。",
         fontsize=10,
         y=0.995,
     )
@@ -574,7 +572,7 @@ def build_argparser() -> argparse.ArgumentParser:
         "--prefix",
         nargs="*",
         default=None,
-        help="只保留 name 以这些前缀开头的 X 区间；不传则用项目默认 CL. train. model/ mix/ shapelets/",
+        help="只保留 name 以这些前缀开头的 X 区间；不传则默认仅 shapelets_bw/",
     )
     p.add_argument(
         "--no-device-filter",

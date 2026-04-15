@@ -1,4 +1,6 @@
+import os
 import time
+import warnings
 
 import numpy as np
 import torch
@@ -9,6 +11,22 @@ from collections import OrderedDict
 
 from utils import generate_binomial_mask
 import logs
+
+_BW_PRE_HOOK_WARNED = False
+
+
+def _skip_checkpoint_for_per_block_bw_profile() -> bool:
+    """
+    gradient checkpoint 重算路径下，子模块的 register_full_backward_pre_hook 往往不按块出现，
+    Chrome trace 里会看不到 shapelets_bw。设环境变量 CSL_DETAIL_BW_IN_PROFILER=1 可临时走
+    非 checkpoint 前向，便于 profiler 里看到每个 block 的反向区间（显存会升高）。
+    """
+    return os.environ.get("CSL_DETAIL_BW_IN_PROFILER", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _backward_grad_hook(module, grad):
@@ -94,13 +112,21 @@ def _register_block_backward_profiling(module, dist_type: str):
     stats_post = _make_block_backward_post_hook(dist_type)
 
     def combined_post_hook(m, grad_input, grad_output):
+        # 先结束 record_function（模块 autograd 反向到此结束），再做 Python 侧计时统计
         _exit_backward_record_function(m)
         stats_post(m, grad_input, grad_output)
 
     # pre + post 配对，使 record_function 覆盖该模块整条反向（需 PyTorch 1.13+）
+    global _BW_PRE_HOOK_WARNED
     if hasattr(module, "register_full_backward_pre_hook"):
         module.register_full_backward_pre_hook(
             _make_backward_profiler_pre_hook(_backward_profiler_label(module))
+        )
+    elif not _BW_PRE_HOOK_WARNED:
+        _BW_PRE_HOOK_WARNED = True
+        warnings.warn(
+            "当前 PyTorch 无 register_full_backward_pre_hook，profiler 中不会出现 shapelets_bw 区间；请升级到 1.13+。",
+            stacklevel=2,
         )
     module.register_full_backward_hook(combined_post_hook)
 
@@ -397,12 +423,23 @@ class ShapeletsDistBlocks(nn.Module):
         #
         #     else:
         #         out = torch.cat((out, block(x, masking)), dim=2)
+        _no_ckpt = _skip_checkpoint_for_per_block_bw_profile()
         for i, (shapelets_size, _) in enumerate(self.shapelets_size_and_len.items()):
             block = self.blocks[i]
             with record_function(f"shapelets/L{shapelets_size}/{block.__class__.__name__}"):
-                if self.checkpoint and self.dist_measure == 'euclidean' and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths:
+                if (
+                    not _no_ckpt
+                    and self.checkpoint
+                    and self.dist_measure == 'euclidean'
+                    and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths
+                ):
                     out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
-                elif self.checkpoint and self.dist_measure == 'cosine' and shapelets_size in logs.cosine_checkpoint_shapelet_lengths:
+                elif (
+                    not _no_ckpt
+                    and self.checkpoint
+                    and self.dist_measure == 'cosine'
+                    and shapelets_size in logs.cosine_checkpoint_shapelet_lengths
+                ):
                     out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
                 else:
                     out = torch.cat((out, block(x, masking)), dim=2)
