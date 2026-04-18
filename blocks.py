@@ -1,5 +1,5 @@
+import os
 import time
-
 import numpy as np
 import torch
 from torch import nn
@@ -11,62 +11,118 @@ from utils import generate_binomial_mask
 import logs
 
 
-def _backward_grad_hook(module, grad):
+def _skip_checkpoint_for_per_block_bw_profile() -> bool:
+    """
+    gradient checkpoint 重算路径下，子模块的 register_full_backward_pre_hook 往往不按块出现，
+    Chrome trace 里会看不到 shapelets_bw。设环境变量 CSL_DETAIL_BW_IN_PROFILER=1 可临时走
+    非 checkpoint 前向，便于 profiler 里看到每个 block 的反向区间（显存会升高）。
+    """
+    return os.environ.get("CSL_DETAIL_BW_IN_PROFILER", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _accumulate_block_backward_stats(module: nn.Module, dist_type: str) -> None:
     if not module.training or not module.to_cuda or not torch.cuda.is_available():
-        return grad
-    if logs.skip_first_forward and not module._bw_warmup_done:
-        module._bw_warmup_done = True
-        return grad
+        return
+    if getattr(module, "_bw_t0", None) is None:
+        return
     torch.cuda.synchronize()
-    module._bw_t0 = time.time()
-    torch.cuda.reset_peak_memory_stats()
-    module._bw_pre_mem = torch.cuda.memory_allocated()
-    return grad
+    duration = time.time() - module._bw_t0
+    length = module.shapelets_size
+    peak_delta = torch.cuda.max_memory_allocated() - module._bw_pre_mem
+    logs.global_backward_peak_mem = max(
+        logs.global_backward_peak_mem, torch.cuda.max_memory_allocated()
+    )
+
+    if length not in logs.block_backward_stats_by_type[dist_type]:
+        logs.block_backward_stats_by_type[dist_type][length] = {
+            "backward_total_time": 0.0,
+            "backward_calls": 1,
+            "peak_mem": None,
+        }
+    stats = logs.block_backward_stats_by_type[dist_type][length]
+    if stats["backward_calls"] < logs.global_iter_count:
+        stats["backward_total_time"] += duration
+        stats["backward_calls"] += 1
+    if stats["peak_mem"] is None:
+        stats["peak_mem"] = peak_delta
+        stats["final_mem"] = 0
+    module._bw_t0 = None
 
 
-def _make_block_backward_post_hook(dist_type: str):
-
-    def post_hook(module, grad_input, grad_output):
-        if not module.training or not module.to_cuda or not torch.cuda.is_available():
-            return
-        if getattr(module, "_bw_t0", None) is None:
-            return
-        torch.cuda.synchronize()
-        duration = time.time() - module._bw_t0
-        length = module.shapelets_size
-        peak_delta = torch.cuda.max_memory_allocated() - module._bw_pre_mem
-        logs.global_backward_peak_mem = max(
-            logs.global_backward_peak_mem, torch.cuda.max_memory_allocated()
-        )
-
-        if length not in logs.block_backward_stats_by_type[dist_type]:
-            logs.block_backward_stats_by_type[dist_type][length] = {
-                "backward_total_time": 0.0,
-                "backward_calls": 1,
-                "peak_mem": None,
-            }
-        stats = logs.block_backward_stats_by_type[dist_type][length]
-        if stats["backward_calls"] < logs.global_iter_count:
-            stats["backward_total_time"] += duration
-            stats["backward_calls"] += 1
-        if stats["peak_mem"] is None:
-            stats["peak_mem"] = peak_delta
-            stats["final_mem"] = 0
-        module._bw_t0 = None
-
-    return post_hook
+def _backward_profiler_label(module: nn.Module) -> str:
+    """与 forward 中 shapelets/... 对称，便于在 trace 里区分前向/反向。"""
+    return f"shapelets_bw/L{module.shapelets_size}/{module.__class__.__name__}"
 
 
-def _attach_backward_tensor_hook(module, tensor):
-    if module.to_cuda and module.training and torch.cuda.is_available():
-        tensor.register_hook(lambda g: _backward_grad_hook(module, g))
-    return tensor
+def _exit_backward_record_function(module: nn.Module) -> None:
+    ctx = getattr(module, "_profiler_bw_rf_ctx", None)
+    if ctx is not None:
+        module._profiler_bw_rf_ctx = None
+        ctx.__exit__(None, None, None)
+
+
+class _BwRangeIn(torch.autograd.Function):
+    """
+    插在共享输入 x 与各 block 之间。反向顺序：… → block.backward → _BwRangeIn.backward → x。
+    在此结束 record_function、累积反向统计（与 _BwRangeOut 成对夹住 block 的整条反向）。
+    """
+
+    @staticmethod
+    def forward(ctx, x, module):
+        ctx.module = module
+        return x.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        module = ctx.module
+        dist_type = getattr(module, "_bw_prof_dist_type", None)
+        _exit_backward_record_function(module)
+        if dist_type is not None:
+            _accumulate_block_backward_stats(module, dist_type)
+        return grad_output, None
+
+
+class _BwRangeOut(torch.autograd.Function):
+    """
+    插在 block 输出与 torch.cat 之间。反向顺序：cat → _BwRangeOut.backward → block.backward → …
+    在此启动计时、重置峰值显存、进入 record_function（与 _BwRangeIn 成对）。
+    """
+
+    @staticmethod
+    def forward(ctx, x, module):
+        ctx.module = module
+        return x.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        module = ctx.module
+        if not module.training:
+            return grad_output, None
+        if logs.skip_first_forward and not module._bw_warmup_done:
+            module._bw_warmup_done = True
+            return grad_output, None
+        if module.to_cuda and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            module._bw_pre_mem = torch.cuda.memory_allocated()
+        module._bw_t0 = time.time()
+        rf_ctx = record_function(_backward_profiler_label(module))
+        rf_ctx.__enter__()
+        module._profiler_bw_rf_ctx = rf_ctx
+        return grad_output, None
 
 
 def _register_block_backward_profiling(module, dist_type: str):
     module._bw_warmup_done = False
     module._bw_t0 = None
-    module.register_full_backward_hook(_make_block_backward_post_hook(dist_type))
+    module._bw_pre_mem = 0
+    module._profiler_bw_rf_ctx = None
+    module._bw_prof_dist_type = dist_type
 
 
 def _calc_parameter_memory_bytes(module: nn.Module) -> int:
@@ -139,7 +195,7 @@ class MinEuclideanDistBlock(nn.Module):
 
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
-            return _attach_backward_tensor_hook(self, x)
+            return x
 
         if length not in logs.block_forward_stats_by_type["euclidean"]:
             logs.block_forward_stats_by_type["euclidean"][length] = {
@@ -155,7 +211,7 @@ class MinEuclideanDistBlock(nn.Module):
             stats["peak_mem"] = torch.cuda.max_memory_allocated() - pre_mem
             stats["final_mem"] = 0
 
-        return _attach_backward_tensor_hook(self, x)
+        return x
 
 
 class MaxCosineSimilarityBlock(nn.Module):
@@ -235,7 +291,7 @@ class MaxCosineSimilarityBlock(nn.Module):
 
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
-            return _attach_backward_tensor_hook(self, x)
+            return x
 
         if length not in logs.block_forward_stats_by_type["cosine"]:
             logs.block_forward_stats_by_type["cosine"][length] = {
@@ -252,7 +308,7 @@ class MaxCosineSimilarityBlock(nn.Module):
         if stats["peak_mem"] is None:
             stats["peak_mem"] = torch.cuda.max_memory_allocated() - pre_mem
             stats["final_mem"] = 0
-        return _attach_backward_tensor_hook(self, x)
+        return x
 
 
 class MaxCrossCorrelationBlock(nn.Module):
@@ -285,7 +341,7 @@ class MaxCrossCorrelationBlock(nn.Module):
         if logs.skip_first_forward and not self._first_forward_skipped:
             self._first_forward_skipped = True
             out = x.transpose(2, 1)
-            return _attach_backward_tensor_hook(self, out)
+            return out
 
         if length not in logs.block_forward_stats_by_type['cross']:
             logs.block_forward_stats_by_type['cross'][length] = {
@@ -298,7 +354,7 @@ class MaxCrossCorrelationBlock(nn.Module):
             stats["forward_total_time"] += duration
             stats["forward_calls"] += 1
 
-        return _attach_backward_tensor_hook(self, x.transpose(2, 1))
+        return x.transpose(2, 1)
 
 
 class ShapeletsDistBlocks(nn.Module):
@@ -354,22 +410,31 @@ class ShapeletsDistBlocks(nn.Module):
     def forward(self, x, masking=False):
 
         out = torch.tensor([], dtype=torch.float).cuda() if self.to_cuda else torch.tensor([], dtype=torch.float)
-        # for block in self.blocks:
-        #
-        #     if self.checkpoint and self.dist_measure != 'cross-correlation' :
-        #         out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
-        #
-        #     else:
-        #         out = torch.cat((out, block(x, masking)), dim=2)
+        _no_ckpt = _skip_checkpoint_for_per_block_bw_profile()
         for i, (shapelets_size, _) in enumerate(self.shapelets_size_and_len.items()):
             block = self.blocks[i]
+            # 双节点夹住 block：x → _BwRangeIn → block → _BwRangeOut → cat
+            # 反向：cat → _BwRangeOut（起计时 + record_function）→ block → _BwRangeIn（收尾 + 统计）
+            x_in = _BwRangeIn.apply(x, block)
             with record_function(f"shapelets/L{shapelets_size}/{block.__class__.__name__}"):
-                if self.checkpoint and self.dist_measure == 'euclidean' and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths:
-                    out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
-                elif self.checkpoint and self.dist_measure == 'cosine' and shapelets_size in logs.cosine_checkpoint_shapelet_lengths:
-                    out = torch.cat((out, checkpoint(block, x, masking, use_reentrant=False)), dim=2)
+                if (
+                    not _no_ckpt
+                    and self.checkpoint
+                    and self.dist_measure == 'euclidean'
+                    and shapelets_size in logs.euclidean_checkpoint_shapelet_lengths
+                ):
+                    block_out = checkpoint(block, x_in, masking, use_reentrant=False)
+                elif (
+                    not _no_ckpt
+                    and self.checkpoint
+                    and self.dist_measure == 'cosine'
+                    and shapelets_size in logs.cosine_checkpoint_shapelet_lengths
+                ):
+                    block_out = checkpoint(block, x_in, masking, use_reentrant=False)
                 else:
-                    out = torch.cat((out, block(x, masking)), dim=2)
+                    block_out = block(x_in, masking)
+            block_out = _BwRangeOut.apply(block_out, block)
+            out = torch.cat((out, block_out), dim=2)
 
         return out
 

@@ -328,21 +328,10 @@ class LearningShapeletsCL:
 
                 loss += self.l3 * (loss_cca + self.l4 * loss_sdl)
 
-            with record_function("CL.backward"):
-                self.optimizer.zero_grad()
-                #
-                # if self.current_epoch == 0:  # 假设你设置了 self.current_epoch
-                #     torch.cuda.synchronize()
-                #     backward_start = time.time()
-                #     loss.backward()
-                #     torch.cuda.synchronize()
-                #     backward_end = time.time()
-                #     global global_backward_total_time
-                #     global_backward_total_time += (backward_end - backward_start)
-                # else:
-                #     loss.backward()
-
-                loss.backward()  # 0.2s
+            # 不在此包 record_function("CL.backward")：否则会盖住整段 loss.backward()，
+            # 且与各 shapelet 子模块的 shapelets_bw 嵌套/并列显示混在一起；细粒度请看 blocks 里 shapelets_bw。
+            self.optimizer.zero_grad()
+            loss.backward()
 
             with record_function("CL.optimizer_step"):
                 self.optimizer.step()
@@ -452,7 +441,7 @@ class LearningShapeletsCL:
 
             # 监控结果文件存放位置
             hander_path = './log/' + self.args.dataset + self.args.de
-            #性能监控
+            # 性能监控（若 trace 缺 shapelets_bw：设 CSL_DETAIL_BW_IN_PROFILER=1 禁用 checkpoint 段）
             with torch.profiler.profile(
                     activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
                     schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
