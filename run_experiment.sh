@@ -24,10 +24,7 @@ echo "Starting experiments..."
 
  #python UEA.py Cricket -lim=18 -de=18GB -b=64  -logdir=./ -algo=oursILP|| echo "⚠️ Failed: Cricket -lim=3"
 # 实验1 budget主实验
-#定义算法列表
-algos=("checkmate" "oursILP")
-# algos=("monet")
-#定义 lim 值（de 与 lim 数值相同，单位 GB）
+# 定义 lim 值（de 与 lim 数值相同，单位 GB）
 # lim_values=(0.5 0.75 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0)
 # lim_values=(8 10 12 14 16)
 lim_values=(16) #motor
@@ -35,18 +32,15 @@ lim_values=(16) #motor
 # lim_values=(10)
 # lim_values=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
 # lim_values=(7 8)
-#遍历每个算法
-for algo in "${algos[@]}"; do
-    logdir="trace_${algo}"
-    for lim in "${lim_values[@]}"; do
-        # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
-        runtime_lim=$(awk "BEGIN {printf \"%.1f\", $lim * 1.0}")
+logdir="trace_oursILP"
+for lim in "${lim_values[@]}"; do
+    # ✅ 实际运行时 lim × 0.9（浮点），用 awk 精确计算
+    runtime_lim=$(awk "BEGIN {printf \"%.1f\", $lim * 1.0}")
 
-        de="${lim}GB"
-        cmd="python UEA.py MotorImagery -lim=${runtime_lim} -de=${algo}_bs2_${de} -b=2 -logdir=${logdir} -algo=${algo}"
-        fail_msg="⚠️ Failed: Cricket -algo=${algo} -lim=${lim}"
-        eval "$cmd" || echo "$fail_msg"
-    done
+    de="${lim}GB"
+    cmd="python UEA.py MotorImagery -lim=${runtime_lim} -de=oursILP_bs2_${de} -b=2 -logdir=${logdir}"
+    fail_msg="⚠️ Failed: MotorImagery -lim=${lim}"
+    eval "$cmd" || echo "$fail_msg"
 done
 
 

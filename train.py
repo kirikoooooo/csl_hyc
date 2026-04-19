@@ -14,10 +14,6 @@ from tqdm import tqdm
 from blocks import LearningShapeletsModel, LearningShapeletsModelMixDistances
 import logs
 from datetime import datetime
-from sko.GA import GA
-from KGA import *
-from solver.checkmate_solver import *
-from solver.monet_solver import *
 from solver.ours_solver import *
 def print_cuda_memory(tag=""):
     allocated = torch.cuda.memory_allocated() / 1024 ** 2  # MB
@@ -480,13 +476,9 @@ class LearningShapeletsCL:
                     self.estimate_backward_time_bias()
                     # 估算时间
                     start = time.perf_counter()
-                    if self.args.algo == "mimose":
-                        self.plan_checkpoint_schedule_bucket()
-                    else:
-                        self.plan_checkpoint_schedule(algo = self.args.algo)
+                    self.plan_checkpoint_schedule()
                     elapsed = time.perf_counter() - start
                     self.logger.info(f"🕒 显存计划规划时间: {elapsed:.6f} 秒")
-                    # exit(0)
 
 
 
@@ -511,9 +503,7 @@ class LearningShapeletsCL:
 
 
 
-    def plan_checkpoint_schedule(self,algo="monet"):
-        from scipy.optimize import differential_evolution
-
+    def plan_checkpoint_schedule(self):
         from logs import x, global_backward_b, global_pre_forward_mem, global_backward_peak_mem, cdist_euclidean_mem
         shapelet_lengths = list(self.shapelets_size_and_len.keys())
         n_lengths = len(shapelet_lengths)  # 通常为 8
@@ -683,83 +673,37 @@ class LearningShapeletsCL:
             penalty = 1e10 * max(0, K_max - memory_limit)
             return total_time + penalty
 
-        # monet algorithem
-        if algo == 'monet' or algo == "checkmate":
-            """
-                cp.Minimize(total_time)
-                constraints.append(K_max < memory_limit)
-            """
-            # 顺序：fw1..fwN, bw1..bwN，对应 mem[0..2N-1]
-            mem = {}
-            for i in range(2 * N):
-                if i < N:
-                    mem[i] = get_peak_mem(i + 1)
-                else:
-                    mem[i] = get_backward_peak(i - N + 1)
-            if algo == "checkmate":
-                result = checkmate(T_euclidean, T_cosine, T_cross, mem, memory_limit)
-            else:
-                result = monet(T_euclidean, T_cosine, T_cross, mem, memory_limit)
-            print(result)
-            # 验证内存限制是否到达
-            mem_list = list(mem.values())
-            real_mem = sum(a * b for a, b in zip(result, mem_list))
-            self.logger.info(f"规划前的显存GB：{float(memory_limit)/float(1024**3)}")
-            self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
-            # 写入 z_best（前 N 位代表 N 个 forward block 的策略）
-            z_best = np.array(result[:N])
+        forward_peak_values = []
+        backward_peak_values = []
+        retain = []
+        for i in range(1, N + 1):
+            forward_peak_values.append(get_peak_mem(i))
+            backward_peak_values.append(get_backward_peak(i))
+            retain.append(get_M_by_idx(i))
 
-        # 差分进化
-        if algo == "diff":
-            result = differential_evolution(objective, bounds=[(0, 1)] * N, strategy='best1bin', maxiter=300, disp=True)
-            z_best = (np.array(result.x) >= 0.5).astype(int)
-
-        #遗传算法
-        if algo == "ga":
-            ga = GA(
-                func=objective,
-                n_dim=N,
-                size_pop=50,
-                max_iter=100,
-                prob_mut=0.1,
-                lb=[0] * N,
-                ub=[1] * N,
-                precision=1,
-            )
-            z_best, best_y = ga.run()
-
-        if algo == "oursILP":
-            forward_peak_values = []
-            backward_peak_values = []
-            retain = []
-            for i in range(1, N + 1):
-                forward_peak_values.append(get_peak_mem(i))
-                backward_peak_values.append(get_backward_peak(i))
-                retain.append(get_M_by_idx(i))
-
-            print(memory_limit/1024/1024)
-            print(global_pre_forward_mem/1024/1024)
-            print(retain[0]/1024/1024)
-            print(forward_peak_values[0]/1024/1024)
-            print(backward_peak_values[0]/1024/1024)
-            solution, _ = solve_memory_budget(
-                memory_budget=memory_limit,
-                forward_peak_values=forward_peak_values,
-                backward_peak_values=backward_peak_values,
-                retained_activation_values=retain,
-                global_pre_forward_mem=global_pre_forward_mem,
-                objective_weights=None,
-                shapelet_lengths=shapelet_lengths,
-                T_cosine=T_cosine,
-                T_euclidean=T_euclidean,
-                T_cross=T_cross,
-                b=b,
-            )
-            kept = sum(solution)
-            print(f" keep {kept}/{N} activations -> {solution}")
-            z_best = np.array(solution)
-            for i in range(N):
-                x[i + 1] = int(z_best[i])
+        print(memory_limit/1024/1024)
+        print(global_pre_forward_mem/1024/1024)
+        print(retain[0]/1024/1024)
+        print(forward_peak_values[0]/1024/1024)
+        print(backward_peak_values[0]/1024/1024)
+        solution, _ = solve_memory_budget(
+            memory_budget=memory_limit,
+            forward_peak_values=forward_peak_values,
+            backward_peak_values=backward_peak_values,
+            retained_activation_values=retain,
+            global_pre_forward_mem=global_pre_forward_mem,
+            objective_weights=None,
+            shapelet_lengths=shapelet_lengths,
+            T_cosine=T_cosine,
+            T_euclidean=T_euclidean,
+            T_cross=T_cross,
+            b=b,
+        )
+        kept = sum(solution)
+        print(f" keep {kept}/{N} activations -> {solution}")
+        z_best = np.array(solution)
+        for i in range(N):
+            x[i + 1] = int(z_best[i])
 
         #验证规划前后显存存储结果
         plan_mem = float(memory_limit)/float(1024**3)
@@ -775,9 +719,6 @@ class LearningShapeletsCL:
         self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
 
         self.logger.info(f"✅ 最优策略：{z_best.tolist()}")
-        # 同步到全局策略数组 x（部分 algo 已在分支里写过，这里统一兜底）
-        for i in range(N):
-            x[i + 1] = int(z_best[i])
 
         logs.euclidean_checkpoint_shapelet_lengths.clear()
         logs.euclidean_checkpoint_shapelet_lengths.extend(
@@ -893,154 +834,4 @@ class LearningShapeletsCL:
         preds = torch.cat(preds, 0)
 
         return preds.detach().numpy()
-
-
-    def plan_checkpoint_schedule_bucket(self):
-        # 保留您原有的变量定义
-        from logs import x, global_backward_b, global_pre_forward_mem, global_backward_peak_mem, cdist_euclidean_mem
-        shapelet_lengths = list(self.shapelets_size_and_len.keys())
-        n_lengths = len(shapelet_lengths)
-        n_per_length = next(iter(self.shapelets_size_and_len.values()))
-        s_x = n_per_length - 2 * (n_per_length // 3)
-
-        # 保留您原有的日志数据收集逻辑
-        T_euclidean = {}
-        T_cosine = {}
-        T_cross = {}
-        peak_memory_e = {}
-        peak_memory_c = {}
-        peak_memory_x = {}
-
-        for length in shapelet_lengths:
-            stat = logs.block_forward_stats_by_type["euclidean"].get(length)
-            if stat:
-                T_euclidean[length] = stat["forward_total_time"] / (stat["forward_calls"] - 1)
-                peak_memory_e[length] = stat["peak_mem"]
-
-            stat = logs.block_forward_stats_by_type["cosine"].get(length)
-            if stat:
-                T_cosine[length] = stat["forward_total_time"] / (stat["forward_calls"] - 1)
-                peak_memory_c[length] = stat["peak_mem"]
-
-            stat = logs.block_forward_stats_by_type["cross"].get(length)
-            if stat:
-                T_cross[length] = stat["forward_total_time"] / (stat["forward_calls"] - 1)
-                if stat.get("peak_mem") is not None:
-                    peak_memory_x[length] = stat["peak_mem"]
-
-        # 显存公式（与 plan_checkpoint_schedule 一致）
-        def get_S_e(length):
-            return peak_memory_e[length]
-
-        def get_S_c(length):
-            return peak_memory_c[length]
-
-        def get_S_x(length):
-            # 兜底：如果运行期间未采集到 cross peak，则用近似公式估计，避免 KeyError
-            if length in peak_memory_x:
-                return peak_memory_x[length]
-            return 4 * (
-                self.batch_size * s_x * (self.length - length + 1)
-                + self.column * s_x * length
-                + self.batch_size * s_x
-            )
-
-        # 1..8 euc fw, 9..16 cos fw, 17..24 cross fw
-        def is_E(i):
-            return 1 <= i <= 8
-
-        def is_C(i):
-            return 9 <= i <= 16
-
-        def is_X(i):
-            return 17 <= i <= 24
-
-        def get_length(i):
-            return shapelet_lengths[(i - 1) % n_lengths]
-
-        N = 3 * n_lengths  # 24
-
-        # 1. 收集并获取所有模块的内存消耗
-        layer_memory = {}
-        for i in range(1, N + 1):
-            if is_E(i):
-                layer_memory[i] = get_S_e(get_length(i))
-            elif is_C(i):
-                layer_memory[i] = get_S_c(get_length(i))
-            else:
-                layer_memory[i] = get_S_x(get_length(i))
-
-        # 2. 按预测内存大小降序排序
-        sorted_layers = sorted(layer_memory.keys(), key=lambda i: layer_memory[i], reverse=True)
-
-        # 3. 分桶
-        buckets = []
-        while sorted_layers:
-            l = sorted_layers.pop(0)
-            bucket = [l]
-            remaining = []
-            for layer in sorted_layers:
-                if layer_memory[layer] > layer_memory[l] * 0.9:
-                    bucket.append(layer)
-                else:
-                    remaining.append(layer)
-            bucket.sort()
-            buckets.append(bucket)
-            sorted_layers = remaining
-
-        # 4. 计算总内存和超支量
-        total_estimated_mem = sum(layer_memory.values())
-        memory_limit = self.args.lim * 1024 ** 3
-        excess_mem = total_estimated_mem - memory_limit
-
-        # 5. 贪心决策：1 表示保留，0 表示需要 checkpoint
-        for i in range(1, N + 1):
-            x[i] = 1
-
-        while excess_mem > 0 and buckets:
-            bucket_candidates = [b for b in buckets if layer_memory[b[0]] > excess_mem]
-
-            if not bucket_candidates:
-                chosen_layer = buckets[0][0]
-            else:
-                chosen_bucket = max(bucket_candidates, key=lambda b: layer_memory[b[0]])
-                chosen_layer = chosen_bucket[0]
-                buckets.remove(chosen_bucket)
-
-            x[chosen_layer] = 0
-            excess_mem -= layer_memory[chosen_layer]
-
-            for bucket in buckets:
-                if chosen_layer in bucket:
-                    bucket.remove(chosen_layer)
-                    if not bucket:
-                        buckets.remove(bucket)
-                    break
-
-        # 6. 日志记录
-        self.logger.info(f"✅ 最优策略：{x[1:N + 1]}")
-        logs.euclidean_checkpoint_shapelet_lengths.clear()
-        logs.euclidean_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(n_lengths) if x[i + 1] == 0]
-        )
-
-        logs.cosine_checkpoint_shapelet_lengths.clear()
-        logs.cosine_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(n_lengths) if x[i + n_lengths + 1] == 0]
-        )
-
-        logs.cross_checkpoint_shapelet_lengths.clear()
-        logs.cross_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(n_lengths) if x[i + 2 * n_lengths + 1] == 0]
-        )
-
-        self.logger.info(f"📌 checkpoint 的欧氏长度:, {logs.euclidean_checkpoint_shapelet_lengths}")
-        self.logger.info(f"📌 checkpoint 的余弦长度:, {logs.cosine_checkpoint_shapelet_lengths}")
-        self.logger.info(f"📌 checkpoint 的 cross 长度:, {logs.cross_checkpoint_shapelet_lengths}")
-
-        self.logger.info(f"💾 最终显存峰值：%.2f MB % {(excess_mem + memory_limit) / 1024 ** 2}")
-
-
-
-
 

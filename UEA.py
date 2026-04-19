@@ -52,7 +52,6 @@ parser.add_argument('--task', default='classification', type=str)
 parser.add_argument('-lim', default=1.0, type=float)
 parser.add_argument('-de', default="default", type=str)
 parser.add_argument('-logdir',default="default_logs",type=str)
-parser.add_argument('-algo',default="monet",type=str)
 parser.add_argument('-len', '--length', default=0, type=int,
                     help='length of time series')
 parser.add_argument('-dim', '--dimension', default=0, type=int,
