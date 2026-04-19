@@ -4,7 +4,6 @@ from datetime import datetime
 
 import numpy as np
 import torch
-# from pygments.lexer import default
 from torch import nn, optim
 import random
 

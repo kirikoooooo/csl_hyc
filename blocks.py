@@ -604,7 +604,6 @@ class LearningShapeletsModelMixDistances(nn.Module):
             # x_out = torch.nn.functional.normalize(x_out, dim=1)
             x_out = self.bn1(x_out)
             x_out = x_out.reshape(n_samples, num_lengths, -1)
-            # print(x_out.shape)
             out = torch.cat((out, x_out), dim=2)
 
         with record_function("mix/shapelets_cosine"):
@@ -613,7 +612,6 @@ class LearningShapeletsModelMixDistances(nn.Module):
             # x_out = torch.nn.functional.normalize(x_out, dim=1)
             x_out = self.bn2(x_out)
             x_out = x_out.reshape(n_samples, num_lengths, -1)
-            # print(x_out.shape)
             out = torch.cat((out, x_out), dim=2)
 
         with record_function("mix/shapelets_cross"):
@@ -622,19 +620,15 @@ class LearningShapeletsModelMixDistances(nn.Module):
             # x_out = torch.nn.functional.normalize(x_out, dim=1)
             x_out = self.bn3(x_out)
             x_out = x_out.reshape(n_samples, num_lengths, -1)
-            # print(x_out.shape)
             out = torch.cat((out, x_out), dim=2)
 
         out = out.reshape(n_samples, -1)
 
-        # print(out.shape)
         # out = self.projection(out)
 
         if optimize == 'acc':
             with record_function("mix/linear_head"):
                 out = self.linear(out)
-        # end_time = time.time()
-        # print(f"{end_time - start_time:.6f} ")
 
         return out
 

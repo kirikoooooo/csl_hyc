@@ -305,7 +305,6 @@ class LearningShapeletsCL:
                     C_appx_q = C_accu_t_q / c_normalising_factor_q
                     loss_sdl += torch.norm(
                         C_appx_q.flatten()[:-1].view(C_appx_q.shape[0] - 1, C_appx_q.shape[0] + 1)[:, 1:], 1).sum()
-                    # print(length_i)
                     C_accu_q[length_i] = C_accu_t_q.detach()
 
                     if k_sum == None:
@@ -320,7 +319,6 @@ class LearningShapeletsCL:
                     C_appx_k = C_accu_t_k / c_normalising_factor_k
                     loss_sdl += torch.norm(
                         C_appx_k.flatten()[:-1].view(C_appx_k.shape[0] - 1, C_appx_k.shape[0] + 1)[:, 1:], 1).sum()
-                    # print(length_i)
                     C_accu_k[length_i] = C_accu_t_k.detach()
 
                 loss_cca = 0.5 * torch.sum(q_square_sum - q_sum * q_sum / num_shapelet_lengths) + 0.5 * torch.sum(
@@ -374,7 +372,6 @@ class LearningShapeletsCL:
                 if self.to_cuda:
                     x = x.cuda()
                     y = y.cuda()
-                    # print("Training data", idx, " on cuda ", torch.cuda.current_device())
                 loss_ce = self.update(x, y)
                 losses_ce.append(loss_ce)
         return losses_ce
@@ -416,7 +413,6 @@ class LearningShapeletsCL:
             logs.euclidean_checkpoint_shapelet_lengths = shapelet_lengths.copy()
             logs.cosine_checkpoint_shapelet_lengths = shapelet_lengths.copy()
             logs.cross_checkpoint_shapelet_lengths = shapelet_lengths.copy()
-            #print("📌 第一个 epoch：默认所有模块使用 checkpoint")
             self.logger.info("📌 第一个 epoch：默认所有模块使用 checkpoint")
 
         for epoch in progress_bar:

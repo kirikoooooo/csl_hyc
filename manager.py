@@ -85,7 +85,6 @@ def cast_forward(module_m, name, manager, shapelets_size_and_len):
         """
         if need_checkpoint():
             if manager.is_warmup():
-                # print(name)
                 rng_state = store_rng_state()
                 """ warmup 阶段只会checkpoint max_levels // 2的block"""
                 data, ret = profile_function(old_forward, *args, **kwargs)
@@ -103,7 +102,6 @@ def cast_forward(module_m, name, manager, shapelets_size_and_len):
             return old_forward(*args, **kwargs)
         else:
             if manager.is_warmup():
-                # print(name)
                 checkpoint_times = manager.checkpoint_count
                 data, ret = profile_function(old_forward, *args, **kwargs)
                 if manager.checkpoint_count == checkpoint_times:
@@ -215,10 +213,8 @@ class PolyPrediction(PredictFuncObject):
     def fit_poly(self, x, y, deg=2):
         poly_func = np.poly1d([0,0])
         if len(x) > 0:
-        # print(x)
             poly_param = np.polyfit(x, y, deg)
             poly_func = np.poly1d(poly_param)
-            # print(poly_param)
             if not self.check_fit(poly_func, x, y):
                 print(f"Memory consumption cannot be fitted to a quadratic polynomial")
         return poly_func
@@ -487,8 +483,6 @@ class Manager:
         self.modules[name] = class_name
         self.ordered_modules.append(name)
         self.max_levels = max(self.max_levels, name.count('-'))
-        # print('-------------------------')
-        # print(name+'  '+self.modules[name])
 
     def set_non_checkpoint(self, name):
         """ 将 module 设为不可 checkpoint """
@@ -640,7 +634,6 @@ class Manager:
                     name2data[name] = {"input_size": [], "memory": []}
                 name2data[name]["input_size"] += [input_size] * len(data_storage.mem_allocated)
                 name2data[name]["memory"] += data_storage.mem_allocated
-                # print(name2data[name]["input_size"])
         # fit
         print(name2data)
         for name, value in name2data.items():
