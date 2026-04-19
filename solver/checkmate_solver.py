@@ -35,14 +35,13 @@ class Node:
         self.workspace_compute = workspace_compute
 
 class SolverInfo:
-    def __init__(self,mem_list: List[int], fixed_mem_list: List[int], compute_list: List[List[float]] ):
+    def __init__(self, mem_list: List[int], fixed_mem_list: List[int], compute_list: List[List[float]], size: int = None):
         self.data_path = ""
-        self.size = 32  # 总节点数
+        # 总节点数：默认从 mem_list 长度推断（前向 + 反向）
+        if size is None:
+            size = len(mem_list)
+        self.size = size  # 总节点数（前向 N + 反向 N）
 
-        # # 初始化节点列表
-        # mem_list = [10] * 8
-        # fixed_mem_list = [0] * 8
-        # compute_list = [100] * 8  # 每个节点计算代价为 100
         mem_list = [int(x * GB_TO_BYTE) for x in mem_list]
         fixed_mem_list = [int(x * GB_TO_BYTE) for x in fixed_mem_list]
         self.nodes = [
@@ -51,13 +50,14 @@ class SolverInfo:
         ]
 
 
-        # 边列表: (u, v, data)
+        # 边列表: 每个前向节点 i 连接到对应反向节点 i + N
+        n_fwd = self.size // 2
         self.edge_list: List[Tuple[int, int, Dict[str, Any]]] = [
-            (i, i + 16, {}) for i in range(16)
+            (i, i + n_fwd, {}) for i in range(n_fwd)
         ]
 
         # loss 节点索引（前向最后一个节点）
-        self.loss = int(self.size / 2) -1
+        self.loss = n_fwd - 1
 
         # 构建后继和前驱索引（预计算，提高效率）
         self._build_graph_index()
@@ -460,30 +460,42 @@ def real_data() -> any:
         ]
     )
 
-def checkmate(T_euclidean,T_cross,mem, budget) -> List:
-    compute_list = list(T_euclidean.values()) + list(T_cross.values()) +list(T_euclidean.values()) + list(T_cross.values())
+def checkmate(T_euclidean, T_cosine, T_cross, mem, budget) -> List:
+    """
+    构建 24 模块（8 euc + 8 cos + 8 cross）+ 24 反向 = 48 节点的图，
+    返回长度为 24 的 0/1 列表，对应每个 forward 模块是否在 backward 起点处仍被存储。
+    """
+    fwd_compute = list(T_euclidean.values()) + list(T_cosine.values()) + list(T_cross.values())
+    bwd_compute = list(T_euclidean.values()) + list(T_cosine.values()) + list(T_cross.values())
+    compute_list = fwd_compute + bwd_compute
     mem_list = list(mem.values())
+    n_fwd = len(fwd_compute)
+    total_size = 2 * n_fwd
+    if len(mem_list) != total_size:
+        raise ValueError(
+            f"checkmate: mem_list len({len(mem_list)}) != 2 * num_forward({n_fwd})"
+        )
     print(mem_list)
     print(compute_list)
-    # exit(0) #here is ok
     soluton_info = SolverInfo(
         mem_list=mem_list,
-        fixed_mem_list=[0] * 32,
-        compute_list=[x * 1000000 for x in compute_list]
+        fixed_mem_list=[0] * total_size,
+        compute_list=[x * 1000000 for x in compute_list],
+        size=total_size,
     )
-    # budget =100000000*100
 
     budget = int(budget)
-    solution = solve_ilp_gurobi(soluton_info,budget,approx=False,time_limit=3600)
+    solution = solve_ilp_gurobi(soluton_info, budget, approx=False, time_limit=3600)
     print(budget)
     print(solution.r)
     print(solution.s)
-    np.savetxt("solution_r.csv", solution.r, delimiter=",", fmt="%d")  # %d 表示整数
+    np.savetxt("solution_r.csv", solution.r, delimiter=",", fmt="%d")
     np.savetxt("solution_s.csv", solution.s, delimiter=",", fmt="%d")
 
     print("Arrays saved to solution_r.csv and solution_s.csv")
 
-    return solution.s[16].tolist()
+    # 返回反向起点处的整行（长度 2N），train.py 会取前 N 个作为 forward 决策
+    return solution.s[n_fwd].tolist()
 
 
 

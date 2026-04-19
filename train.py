@@ -184,7 +184,7 @@ class LearningShapeletsCL:
 
         logger.info("🧮 参数显存统计（单位：MB）")
 
-        for dist_type in ("euclidean", "cosine"):
+        for dist_type in ("euclidean", "cosine", "cross"):
             if not logs.block_param_memory_by_type[dist_type]:
                 continue
             type_total = sum(logs.block_param_memory_by_type[dist_type].values())
@@ -415,6 +415,7 @@ class LearningShapeletsCL:
             shapelet_lengths = list(self.shapelets_size_and_len.keys())
             logs.euclidean_checkpoint_shapelet_lengths = shapelet_lengths.copy()
             logs.cosine_checkpoint_shapelet_lengths = shapelet_lengths.copy()
+            logs.cross_checkpoint_shapelet_lengths = shapelet_lengths.copy()
             #print("📌 第一个 epoch：默认所有模块使用 checkpoint")
             self.logger.info("📌 第一个 epoch：默认所有模块使用 checkpoint")
 
@@ -519,7 +520,14 @@ class LearningShapeletsCL:
 
         from logs import x, global_backward_b, global_pre_forward_mem, global_backward_peak_mem, cdist_euclidean_mem
         shapelet_lengths = list(self.shapelets_size_and_len.keys())
-        s = 13
+        n_lengths = len(shapelet_lengths)  # 通常为 8
+        # 与原代码一致地从 shapelets_size_and_len 推断每长度的 shapelet 数（mix 模式下一切按 1/3 划分）
+        n_per_length = next(iter(self.shapelets_size_and_len.values()))
+        s_e = n_per_length // 3  # euclidean 子块每长度的 shapelet 数（mix 模式下=13）
+        s_c = n_per_length // 3  # cosine 子块每长度的 shapelet 数（mix 模式下=13）
+        s_x = n_per_length - 2 * (n_per_length // 3)  # cross 子块每长度的 shapelet 数（mix 模式下=14）
+        # 旧代码中固定 s=13，沿用兼容（cosine 公式中使用）
+        s = s_c
 
         # 记录运行时间和前向峰值显存
         T_euclidean = {}
@@ -527,6 +535,7 @@ class LearningShapeletsCL:
         T_cross = {}
         peak_memory_e = {}
         peak_memory_c = {}
+        peak_memory_x = {}
 
         for length in shapelet_lengths:
             stat = logs.block_forward_stats_by_type["euclidean"].get(length)
@@ -542,8 +551,12 @@ class LearningShapeletsCL:
             stat = logs.block_forward_stats_by_type["cross"].get(length)
             if stat:
                 T_cross[length] = stat["forward_total_time"] / (stat["forward_calls"] - 1)
+                # cross 现在也记录 peak_mem
+                if stat.get("peak_mem") is not None:
+                    peak_memory_x[length] = stat["peak_mem"]
 
-        forward_peek = max(list(peak_memory_e.values()) + list(peak_memory_c.values()))
+        forward_peek_candidates = list(peak_memory_e.values()) + list(peak_memory_c.values()) + list(peak_memory_x.values())
+        forward_peek = max(forward_peek_candidates) if forward_peek_candidates else 1
         # 显存公式
         # get_M_e(length): 计算长度为 `length` 的欧氏模块前向后需保留的最终内存。
         def get_M_e(length):
@@ -552,6 +565,14 @@ class LearningShapeletsCL:
         def get_M_c(length):
             return 4 * (2* s * self.column+ self.column*s*length+self.batch_size*self.column * (self.length - length + 1) *length + self.batch_size* s+ self.batch_size * (self.length - length + 1) * s)
 
+        def get_M_x(length):
+            # cross block 主要保留 Conv1d 输出（B,s_x,L-K+1）+ 卷积权重（C,s_x,K）+ 最终输出（B,s_x）
+            return 4 * (
+                self.batch_size * s_x * (self.length - length + 1)
+                + self.column * s_x * length
+                + self.batch_size * s_x
+            )
+
         # get_S_e(length): 获取长度为 `length` 的欧氏模块前向峰值内存 (统计数据)。
         def get_S_e(length):
             return peak_memory_e[length]
@@ -559,45 +580,73 @@ class LearningShapeletsCL:
         def get_S_c(length):
             return peak_memory_c[length]
 
-        # is_E(i): 判断索引 `i` 是否为欧氏模块 (1-8, 17-24)。
+        def get_S_x(length):
+            # cross peak 可能 None（极少触发场景），用 retain 估计兜底
+            return peak_memory_x.get(length, get_M_x(length))
+
+        # is_E(i): 第 i 个 stage 是否为欧氏模块。
+        # 索引规划：1..8 euc fw, 9..16 cos fw, 17..24 cross fw,
+        #          25..32 euc bw, 33..40 cos bw, 41..48 cross bw
         def is_E(i):
-            return 1 <= i <= 8 or 17 <= i <= 24
+            return 1 <= i <= 8 or 25 <= i <= 32
 
         def is_C(i):
-            return 9 <= i <= 16 or 25 <= i <= 32
+            return 9 <= i <= 16 or 33 <= i <= 40
 
-        # get_length(i): 根据索引 `i` (1-32) 获取对应的 Shapelet 长度
+        def is_X(i):
+            return 17 <= i <= 24 or 41 <= i <= 48
+
+        # get_length(i): 根据索引 `i` (1..48) 获取对应的 Shapelet 长度
         def get_length(i):
-            return shapelet_lengths[(i - 1) % 8]
+            return shapelet_lengths[(i - 1) % n_lengths]
 
         # get_peak_mem(i): 获取第 `i` 个MODULE FORWARD的峰值内存
         def get_peak_mem(i):
-            return get_S_e(get_length(i)) if is_E(i) else get_S_c(get_length(i))
+            if is_E(i):
+                return get_S_e(get_length(i))
+            elif is_C(i):
+                return get_S_c(get_length(i))
+            else:
+                return get_S_x(get_length(i))
+
+        def get_M_by_idx(i):
+            if is_E(i):
+                return get_M_e(get_length(i))
+            elif is_C(i):
+                return get_M_c(get_length(i))
+            else:
+                return get_M_x(get_length(i))
 
         # get_final_mem(i): 计算第 `i` 个前向阶段结束后保留的内存 (由策略 x[i] 决定)
         def get_final_mem(i):
-            return x[i] * (get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i)))
+            return x[i] * get_M_by_idx(i)
 
         # get_release(i): 计算第 `i` 个反向阶段释放的内存 (由策略 x[i] 决定)。
         def get_release(i):
-            if x[i] == 0: return 0
-            return get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i))
+            if x[i] == 0:
+                return 0
+            return get_M_by_idx(i)
 
         # get_backward_peak(i): 估算第 `i` 个模块反向时的峰值内存。
         def get_backward_peak(i):
-            return global_backward_peak_mem / forward_peek * get_S_e(get_length(i)) if is_E(i) else get_S_c(get_length(i))
+            ratio = (global_backward_peak_mem / forward_peek) if forward_peek else 1.0
+            return ratio * get_peak_mem(i)
 
-        # 计算前向和后向共65 个stage的显存峰值,这部分有点问题，应该是33
+        N = 3 * n_lengths  # 24 个决策模块（8 euc + 8 cos + 8 cross）
+
+        # 计算前向和后向共 (2N+1) 个 stage 的显存峰值
         def compute_K():
-            K = [0] * 33
+            total_stages = 2 * N + 1
+            K = [0] * (total_stages + 1)
             cum_final = 0
-            for t in range(1, 17):
-                K[t] = global_pre_forward_mem  + get_peak_mem(t) + cum_final
+            for t in range(1, N + 1):
+                K[t] = global_pre_forward_mem + get_peak_mem(t) + cum_final
                 cum_final += get_final_mem(t)
-            total_final = sum(get_final_mem(i) for i in range(1, 33))
+            total_final = sum(get_final_mem(i) for i in range(1, N + 1))
             cum_release = 0
-            for t in range(17, 33):
-                i = 33 - t
+            for t in range(N + 1, 2 * N + 1):
+                i = (2 * N + 1) - t  # 反向索引：t=N+1 时 i=N
+                # 反向阶段对应的模块 stage id：i 仍在 1..N 范围内
                 K[t] = get_backward_peak(i) + total_final - cum_release
                 cum_release += get_release(i)
             return K
@@ -609,30 +658,32 @@ class LearningShapeletsCL:
         b = global_backward_b
         memory_limit = self.args.lim * 1024 ** 3 #byte
 
-        # 目标函数 zbin 的值来自于遗传算法的遍历,BE CAUTIOUS 之前这里是67
+        # 目标函数 zbin 的值来自于遗传算法的遍历
         def objective(z_bin):
-            # z_bin = [int(z >= 0.5) for z in z_float]
-            for i in range(1, 17):
+            for i in range(1, N + 1):
                 x[i] = z_bin[i - 1]
-                x[i + 16] = z_bin[i - 1]
-
             K_max = compute_overall_peak()
 
-            x_euc, x_cos = z_bin[:8], z_bin[8:]
             T_ckp = T_nockp = 0
-            for i in range(8):
+            T_ckp_x = T_nockp_x = 0
+            for i in range(n_lengths):
                 length = shapelet_lengths[i]
                 if z_bin[i] == 0:
                     T_ckp += T_euclidean[length]
                 else:
                     T_nockp += T_euclidean[length]
-                if z_bin[i + 8] == 0:
+                if z_bin[i + n_lengths] == 0:
                     T_ckp += T_cosine[length]
                 else:
                     T_nockp += T_cosine[length]
+                if z_bin[i + 2 * n_lengths] == 0:
+                    T_ckp_x += T_cross[length]
+                else:
+                    T_nockp_x += T_cross[length]
 
-            T_cross_total = sum(T_cross)
-            total_time = 48 * (3 * T_ckp + 2 * T_nockp + 2 * T_cross_total) + b
+            # 与原模型一致：checkpoint 的 block 在反向阶段需重算一次 forward，故乘 3；
+            # 不 checkpoint 的 block 反向阶段保留中间结果，乘 2。cross 现在也参与同样模型。
+            total_time = 48 * (3 * T_ckp + 2 * T_nockp + 3 * T_ckp_x + 2 * T_nockp_x) + b
             penalty = 1e10 * max(0, K_max - memory_limit)
             return total_time + penalty
 
@@ -641,77 +692,60 @@ class LearningShapeletsCL:
             """
                 cp.Minimize(total_time)
                 constraints.append(K_max < memory_limit)
-
             """
+            # 顺序：fw1..fwN, bw1..bwN，对应 mem[0..2N-1]
             mem = {}
-            for i in range(33):
-                if i<16:
-                    mem[i] = get_peak_mem(i)
+            for i in range(2 * N):
+                if i < N:
+                    mem[i] = get_peak_mem(i + 1)
                 else:
-                    mem[i] = get_backward_peak(i)
+                    mem[i] = get_backward_peak(i - N + 1)
             if algo == "checkmate":
-                result =checkmate(T_euclidean,T_cross,mem,memory_limit)  # checkmate 里面会改变z_best的值
+                result = checkmate(T_euclidean, T_cosine, T_cross, mem, memory_limit)
             else:
-                result = monet(T_euclidean,T_cross,mem,memory_limit)
+                result = monet(T_euclidean, T_cosine, T_cross, mem, memory_limit)
             print(result)
             # 验证内存限制是否到达
             mem_list = list(mem.values())
-            real_mem =sum(a * b for a, b in zip(result, mem_list))
+            real_mem = sum(a * b for a, b in zip(result, mem_list))
             self.logger.info(f"规划前的显存GB：{float(memory_limit)/float(1024**3)}")
             self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
-            # 写入z_best
-            z_best = np.array(result[:16])
-            # # 如果z_best 中含有元素0 exit(0)
-            # if 0 in z_best:
-            #     self.logger.info("规划结果含有0，退出程序")
-            #     exit(1)
-
+            # 写入 z_best（前 N 位代表 N 个 forward block 的策略）
+            z_best = np.array(result[:N])
 
         # 差分进化
         if algo == "diff":
-            result = differential_evolution(objective, bounds=[(0, 1)] * 16, strategy='best1bin', maxiter=300, disp=True)
-            z_best = (np.array(result.x) >= 0.5).astype(int) #? 干啥的母鸡好像是差分
+            result = differential_evolution(objective, bounds=[(0, 1)] * N, strategy='best1bin', maxiter=300, disp=True)
+            z_best = (np.array(result.x) >= 0.5).astype(int)
 
         #遗传算法
         if algo == "ga":
             ga = GA(
                 func=objective,
-                n_dim=16,
+                n_dim=N,
                 size_pop=50,
                 max_iter=100,
                 prob_mut=0.1,
-                lb=[0] * 16,
-                ub=[1] * 16,
+                lb=[0] * N,
+                ub=[1] * N,
                 precision=1,
             )
             z_best, best_y = ga.run()
 
         if algo == "oursILP":
-
             forward_peak_values = []
             backward_peak_values = []
             retain = []
-            for i in range(1, 17):
+            for i in range(1, N + 1):
                 forward_peak_values.append(get_peak_mem(i))
                 backward_peak_values.append(get_backward_peak(i))
-                retain_value = get_M_e(get_length(i)) if is_E(i) else get_M_c(get_length(i))
-                retain.append(retain_value)
-
-
+                retain.append(get_M_by_idx(i))
 
             print(memory_limit/1024/1024)
             print(global_pre_forward_mem/1024/1024)
             print(retain[0]/1024/1024)
             print(forward_peak_values[0]/1024/1024)
             print(backward_peak_values[0]/1024/1024)
-            # exit(0)
-            # print(len(retain))
-            # print(len(backward_peak_values))
-            # print(len(forward_peak_values))
-            # for i in range(len(forward_peak_values)):
-            #     print(f"forward peak {i}: {forward_peak_values[i]/1024/1024} MB")
-            #     print(f"backward peak {i}: {backward_peak_values[i]/1024/1024} MB")
-            #     print(f"retain {i}: {retain[i]/1024/1024} MB")
             solution, _ = solve_memory_budget(
                 memory_budget=memory_limit,
                 forward_peak_values=forward_peak_values,
@@ -723,22 +757,21 @@ class LearningShapeletsCL:
                 T_cosine=T_cosine,
                 T_euclidean=T_euclidean,
                 T_cross=T_cross,
-                b=b
+                b=b,
             )
             kept = sum(solution)
-            print(f" keep {kept}/16 activations -> {solution}")
+            print(f" keep {kept}/{N} activations -> {solution}")
             z_best = np.array(solution)
-            for i in range(16):
+            for i in range(N):
                 x[i + 1] = int(z_best[i])
-                x[i + 17] = int(z_best[i])
 
         #验证规划前后显存存储结果
         plan_mem = float(memory_limit)/float(1024**3)
         # 根据 z_best 计算存储结果
         real_mem = 0.0
-        for i in range(0,16):
+        for i in range(0, N):
             if z_best[i] == 1:
-                block_MEM = get_M_e(get_length(i+1)) if is_E(i+1) else get_M_c(get_length(i+1))
+                block_MEM = get_M_by_idx(i + 1)
                 real_mem += block_MEM
                 print(f"模块 {i+1}  save checkpoint，显存 {block_MEM/1024/1024} MB")
 
@@ -746,19 +779,28 @@ class LearningShapeletsCL:
         self.logger.info(f"规划后的显存GB：{float(real_mem)/float(1024**3)}")
 
         self.logger.info(f"✅ 最优策略：{z_best.tolist()}")
-        all_lengths = list(self.shapelets_size_and_len.keys())
+        # 同步到全局策略数组 x（部分 algo 已在分支里写过，这里统一兜底）
+        for i in range(N):
+            x[i + 1] = int(z_best[i])
+
         logs.euclidean_checkpoint_shapelet_lengths.clear()
         logs.euclidean_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(8) if z_best[i] == 0]
+            [shapelet_lengths[i] for i in range(n_lengths) if z_best[i] == 0]
         )
 
         logs.cosine_checkpoint_shapelet_lengths.clear()
         logs.cosine_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(8) if z_best[i + 8] == 0]
+            [shapelet_lengths[i] for i in range(n_lengths) if z_best[i + n_lengths] == 0]
+        )
+
+        logs.cross_checkpoint_shapelet_lengths.clear()
+        logs.cross_checkpoint_shapelet_lengths.extend(
+            [shapelet_lengths[i] for i in range(n_lengths) if z_best[i + 2 * n_lengths] == 0]
         )
 
         self.logger.info(f"📌 checkpoint 的欧氏长度:, {logs.euclidean_checkpoint_shapelet_lengths}")
         self.logger.info(f"📌 checkpoint 的余弦长度:, {logs.cosine_checkpoint_shapelet_lengths}")
+        self.logger.info(f"📌 checkpoint 的 cross 长度:, {logs.cross_checkpoint_shapelet_lengths}")
 
         self.logger.info(f"💾 最终显存峰值：%.2f MB % {(compute_overall_peak() / 1024 ** 2)}")
 
@@ -790,27 +832,30 @@ class LearningShapeletsCL:
             同时会打印出拟合过程和结果信息。
         """
 
-        A = 0.0
-        B = 0.0
+        A = 0.0  # euclidean + cosine 模块的等效反向时间（默认 epoch 0/1 内 checkpoint 全开，系数=3）
+        B = 0.0  # cross 模块的等效反向时间（现在 cross 也参与 checkpoint，同样系数=3）
 
         for dist_type in ["euclidean", "cosine"]:
             for length, stats in logs.block_forward_stats_by_type[dist_type].items():
                 t = stats["forward_total_time"]
                 n = stats["forward_calls"]
-                A += 3 * t / (n-1) * n
+                if n <= 1:
+                    continue
+                A += 3 * t / (n - 1) * n
 
         for length, stats in logs.block_forward_stats_by_type["cross"].items():
             t = stats["forward_total_time"]
             n = stats["forward_calls"]
-            B += 2 * t / (n-1) * n
+            if n <= 1:
+                continue
+            B += 3 * t / (n - 1) * n
 
         b = logs.global_backward_total_time - (A + B)
         logs.global_backward_b = b  # ✅ 存起来
-        # self.backward_time_bias = b
 
         self.logger.info("\n[🔁 拟合反向传播时间模型]")
         self.logger.info(f"总反向传播时间: {logs.global_backward_total_time:.6f}s")
-        self.logger.info(f"拟合模型: backward_total ≈ 2 × (A + B) + b")
+        self.logger.info(f"拟合模型: backward_total ≈ 3 × (A_euc+cos) + 3 × (B_cross) + b")
         self.logger.info(f"A = {A:.6f}, B = {B:.6f}, b = {b:.6f}s")
 
     def transform(self, X, *, batch_size=512, result_type='tensor', normalize=False):
@@ -858,7 +903,9 @@ class LearningShapeletsCL:
         # 保留您原有的变量定义
         from logs import x, global_backward_b, global_pre_forward_mem, global_backward_peak_mem, cdist_euclidean_mem
         shapelet_lengths = list(self.shapelets_size_and_len.keys())
-        s = 13
+        n_lengths = len(shapelet_lengths)
+        n_per_length = next(iter(self.shapelets_size_and_len.values()))
+        s_x = n_per_length - 2 * (n_per_length // 3)
 
         # 保留您原有的日志数据收集逻辑
         T_euclidean = {}
@@ -866,6 +913,7 @@ class LearningShapeletsCL:
         T_cross = {}
         peak_memory_e = {}
         peak_memory_c = {}
+        peak_memory_x = {}
 
         for length in shapelet_lengths:
             stat = logs.block_forward_stats_by_type["euclidean"].get(length)
@@ -881,114 +929,120 @@ class LearningShapeletsCL:
             stat = logs.block_forward_stats_by_type["cross"].get(length)
             if stat:
                 T_cross[length] = stat["forward_total_time"] / (stat["forward_calls"] - 1)
+                if stat.get("peak_mem") is not None:
+                    peak_memory_x[length] = stat["peak_mem"]
 
-        forward_peek = max(list(peak_memory_e.values()) + list(peak_memory_c.values()))
-
-        # 保留您原有的所有内存计算函数 (get_M_e, get_M_c, get_S_e, get_S_c, is_E, is_C, get_length)
-        def get_M_e(length):
-            return 4 * self.batch_size * self.column * (self.length- length + 1) * length + cdist_euclidean_mem
-
-        def get_M_c(length):
-            return 4 * (2* s * self.column+ self.column*s*length+self.batch_size*self.column * (self.length - length + 1) *length + self.batch_size* s+ self.batch_size * (self.length - length + 1) * s)
-
+        # 显存公式（与 plan_checkpoint_schedule 一致）
         def get_S_e(length):
             return peak_memory_e[length]
 
         def get_S_c(length):
             return peak_memory_c[length]
 
+        def get_S_x(length):
+            # 兜底：如果运行期间未采集到 cross peak，则用近似公式估计，避免 KeyError
+            if length in peak_memory_x:
+                return peak_memory_x[length]
+            return 4 * (
+                self.batch_size * s_x * (self.length - length + 1)
+                + self.column * s_x * length
+                + self.batch_size * s_x
+            )
+
+        # 1..8 euc fw, 9..16 cos fw, 17..24 cross fw
         def is_E(i):
-            return 1 <= i <= 8 or 17 <= i <= 24
+            return 1 <= i <= 8
 
         def is_C(i):
-            return 9 <= i <= 16 or 25 <= i <= 32
+            return 9 <= i <= 16
+
+        def is_X(i):
+            return 17 <= i <= 24
 
         def get_length(i):
-            return shapelet_lengths[(i - 1) % 8]
+            return shapelet_lengths[(i - 1) % n_lengths]
 
-        # 以下部分是 Algorithm 1 贪心决策的实现
-        # 1. 收集并获取所有模块的内存消耗 (使用您已计算好的 peak_memory_e/c)
+        N = 3 * n_lengths  # 24
+
+        # 1. 收集并获取所有模块的内存消耗
         layer_memory = {}
-        for i in range(1, 17):
-            layer_memory[i] = get_S_e(get_length(i)) if is_E(i) else get_S_c(get_length(i))
+        for i in range(1, N + 1):
+            if is_E(i):
+                layer_memory[i] = get_S_e(get_length(i))
+            elif is_C(i):
+                layer_memory[i] = get_S_c(get_length(i))
+            else:
+                layer_memory[i] = get_S_x(get_length(i))
 
-        # 2. 按预测内存大小降序排序 (Algorithm 1, Line 3)
+        # 2. 按预测内存大小降序排序
         sorted_layers = sorted(layer_memory.keys(), key=lambda i: layer_memory[i], reverse=True)
 
-        # 3. 分桶 (Buckets) (Algorithm 1, Lines 4-12)
+        # 3. 分桶
         buckets = []
         while sorted_layers:
-            l = sorted_layers.pop(0)  # 取出内存最大的层 (Line 5)
+            l = sorted_layers.pop(0)
             bucket = [l]
-            # 将内存大小在 l 的 90% 以上的层归入同一桶 (Line 8)
             remaining = []
             for layer in sorted_layers:
                 if layer_memory[layer] > layer_memory[l] * 0.9:
                     bucket.append(layer)
                 else:
                     remaining.append(layer)
-            # 对桶内层按索引升序排序 (即前向执行顺序) (Line 11)
             bucket.sort()
             buckets.append(bucket)
             sorted_layers = remaining
 
-        # 4. 计算总内存和超支量 (Algorithm 1, Line 13)
+        # 4. 计算总内存和超支量
         total_estimated_mem = sum(layer_memory.values())
         memory_limit = self.args.lim * 1024 ** 3
         excess_mem = total_estimated_mem - memory_limit
 
-        # 5. 贪心决策：选择需要丢弃（检查点）的层 (Algorithm 1, Lines 14-21)
-        # 初始化 x 数组，1 表示保留
-        for i in range(1, 17):
+        # 5. 贪心决策：1 表示保留，0 表示需要 checkpoint
+        for i in range(1, N + 1):
             x[i] = 1
 
         while excess_mem > 0 and buckets:
-            # 寻找候选桶：桶内最大内存 > excess_mem (Line 15)
             bucket_candidates = [b for b in buckets if layer_memory[b[0]] > excess_mem]
 
             if not bucket_candidates:
-                # 如果没有候选桶，选择所有桶中内存最大的层 (Line 17)
-                chosen_layer = buckets[0][0] # buckets[0][0] 是全局内存最大的层
+                chosen_layer = buckets[0][0]
             else:
-                # 选择候选桶中内存最大的桶，并取其第一个元素 (Line 19)
                 chosen_bucket = max(bucket_candidates, key=lambda b: layer_memory[b[0]])
                 chosen_layer = chosen_bucket[0]
-                # 从候选桶列表中移除该桶
                 buckets.remove(chosen_bucket)
 
-            # 将选中的层标记为需要丢弃（检查点）(Line 20)
             x[chosen_layer] = 0
-            # 更新超支量 (Line 21)
             excess_mem -= layer_memory[chosen_layer]
 
-            # 从所有桶中移除该层
             for bucket in buckets:
                 if chosen_layer in bucket:
                     bucket.remove(chosen_layer)
-                    if not bucket: # 如果桶为空，则移除该桶
+                    if not bucket:
                         buckets.remove(bucket)
                     break
 
-        # 6. 保留您原有的日志记录
-        self.logger.info(f"✅ 最优策略：{x[1:]}")
-        all_lengths = list(self.shapelets_size_and_len.keys())
+        # 6. 日志记录
+        self.logger.info(f"✅ 最优策略：{x[1:N + 1]}")
         logs.euclidean_checkpoint_shapelet_lengths.clear()
         logs.euclidean_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(8) if x[i+1] == 0] # 注意索引从1开始
+            [shapelet_lengths[i] for i in range(n_lengths) if x[i + 1] == 0]
         )
 
         logs.cosine_checkpoint_shapelet_lengths.clear()
         logs.cosine_checkpoint_shapelet_lengths.extend(
-            [shapelet_lengths[i] for i in range(8) if x[i + 9] == 0] # 注意索引从1开始
+            [shapelet_lengths[i] for i in range(n_lengths) if x[i + n_lengths + 1] == 0]
+        )
+
+        logs.cross_checkpoint_shapelet_lengths.clear()
+        logs.cross_checkpoint_shapelet_lengths.extend(
+            [shapelet_lengths[i] for i in range(n_lengths) if x[i + 2 * n_lengths + 1] == 0]
         )
 
         self.logger.info(f"📌 checkpoint 的欧氏长度:, {logs.euclidean_checkpoint_shapelet_lengths}")
         self.logger.info(f"📌 checkpoint 的余弦长度:, {logs.cosine_checkpoint_shapelet_lengths}")
+        self.logger.info(f"📌 checkpoint 的 cross 长度:, {logs.cross_checkpoint_shapelet_lengths}")
 
         self.logger.info(f"💾 最终显存峰值：%.2f MB % {(excess_mem + memory_limit) / 1024 ** 2}")
-
-        # 注意：这里不再返回任何值，也不再调用 differential_evolution 或 GA。
-        # 检查点策略已经通过修改全局变量 `x` 来设置。
 
 
 

@@ -60,11 +60,16 @@ def add_memory_peak_constraints(
     backward_peaks = list(backward_peak_values)
     forward_stage_count = len(forward_peaks)
     backward_stage_count = len(backward_peaks)
-    if forward_stage_count + backward_stage_count == 32:
+    # 期望约束总数 = 2N + 1（N 个前向 + 1 个前向尾部 total_final + N 个反向）
+    # forward_peaks 既可传 N（系统会末尾补 0）也可传 N+1
+    if forward_stage_count == num_modules and backward_stage_count == num_modules:
         forward_peaks.append(0.0)
         forward_stage_count += 1
-    if forward_stage_count + backward_stage_count != 33:
-        raise ValueError("Expected 33 stages in total (forward + backward).")
+    if not (forward_stage_count == num_modules + 1 and backward_stage_count == num_modules):
+        raise ValueError(
+            f"Expected forward={num_modules}+1 stages and backward={num_modules} stages, "
+            f"got forward={forward_stage_count}, backward={backward_stage_count}"
+        )
 
     ordered_x = [x_vars[i] for i in range(num_modules)]
     constraints: List[Constr] = []
@@ -82,10 +87,11 @@ def add_memory_peak_constraints(
     def get_release(module_idx: int) -> LinExpr:
         return retained_activation_values[module_idx - 1] * (1 - x_vars[module_idx - 1])
 
+    # 前向阶段：t = 1..2N，模块下标 m 在 1..N 范围内重复一次（与 q+k 双 pass 一致）
     cum_final_expr: LinExpr = LinExpr()
-    for t in range(1, 33):
-        if t > 16:
-            m = t-16
+    for t in range(1, 2 * num_modules + 1):
+        if t > num_modules:
+            m = t - num_modules
         else:
             m = t
 
@@ -98,29 +104,28 @@ def add_memory_peak_constraints(
         cum_final_expr += get_final_mem(m)
 
 
-    # 前向结束时峰值
-    total_final_expr =2 * sum(get_final_mem(i)*(x_vars[i-1]) for i in range(1,17)) + global_pre_forward_mem
+    # 前向结束时峰值（factor 2 表示 q-pass + k-pass 的累计 retain）
+    total_final_expr = 2 * sum(get_final_mem(i) * (x_vars[i - 1]) for i in range(1, num_modules + 1)) + global_pre_forward_mem
     constraints.append(
         model.addConstr(total_final_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
     )
     stage_id += 1
 
 
-    # total_final_cum = sum(get_final_mem(i) for i in range(1,17))
+    # 反向阶段：t = 1..2N，模块下标 m 在 1..N 范围内重复一次
     cum_release_expr: LinExpr = LinExpr()
 
-    for t in range(1,33):
-        if t > 16:
-            m = t-16
+    for t in range(1, 2 * num_modules + 1):
+        if t > num_modules:
+            m = t - num_modules
         else:
             m = t
         # 反向传播
         k_expr = get_backward_peak(m) + total_final_expr - cum_release_expr
 
         # 重计算
-        k_expr2 = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1])
+        k_expr2 = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m - 1])
 
-        #k_expr = (1-x_vars[m])*k_expr2 + x_vars[m]*k_expr
         constraints.append(
             model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
         )
@@ -129,23 +134,6 @@ def add_memory_peak_constraints(
         )
         stage_id += 1
         cum_release_expr += get_release(m)
-
-    # total_final_expr2 = total_final_expr
-    # # 重计算约束
-    # for t in range(1,33):
-    #     if t > 16:
-    #         m = t-16
-    #     else:
-    #         m = t
-
-    #     # 重计算峰值，反向传播+正向计算[没存的]+还剩的激活+模型初始显存
-    #     k_expr = get_backward_peak(m) + get_peak_mem(m) * (1 - x_vars[m-1]) + global_pre_forward_mem
-
-    #     constraints.append(
-    #         model.addConstr(k_expr <= memory_budget, name=f"{constraint_prefix}_stage_{stage_id}")
-    #     )
-    #     stage_id += 1
-
 
     return x_vars, constraints
 
@@ -211,36 +199,24 @@ def solve_memory_budget(
     if objective_weights is None:
         T_ckp = 0
         T_nockp = 0
+        n_lengths = len(shapelet_lengths)
 
-        for i in range(8):
+        for i in range(n_lengths):
             length = shapelet_lengths[i]
-
-            # --- 这是修改的核心 ---
-            # 假设 x_vars[i] 是二元 (0/1) 变量
-
-            # 1. 处理 Euclidean
-            # (1 - x_vars[i]) 会在 x_vars[i] == 0 时为 1, 否则为 0
+            # 1. Euclidean (x_vars[i])
             T_ckp += (1 - x_vars[i]) * T_euclidean[length]
-
-            # x_vars[i] 会在 x_vars[i] == 1 时为 1, 否则为 0
             T_nockp += x_vars[i] * T_euclidean[length]
+            # 2. Cosine (x_vars[i + n_lengths])
+            T_ckp += (1 - x_vars[i + n_lengths]) * T_cosine[length]
+            T_nockp += x_vars[i + n_lengths] * T_cosine[length]
+            # 3. Cross (x_vars[i + 2 * n_lengths])，与 cosine 平权地参与决策
+            if length in T_cross:
+                T_ckp += (1 - x_vars[i + 2 * n_lengths]) * T_cross[length]
+                T_nockp += x_vars[i + 2 * n_lengths] * T_cross[length]
 
-            # 2. 处理 Cosine (使用 x_vars[i + 8])
-            T_ckp += (1 - x_vars[i + 8]) * T_cosine[length]
-            T_nockp += x_vars[i + 8] * T_cosine[length]
-            # --- 修改结束 ---
-
-        # 之后的部分保持不变
-        # 因为 T_ckp 和 T_nockp 现在是 Gurobi 表达式 (LinExpr),
-        # total_time 也会自动成为一个 LinExpr
-        T_cross_total = sum(T_cross)
-        total_time = 48 * (3000 * T_ckp  + 2 * T_cross_total) + b
+        total_time = 48 * (3 * T_ckp + 2 * T_nockp) + b
         objective = total_time
     else:
-        # weights = list(objective_weights)
-        # if len(weights) != len(x_vars):
-        #     raise ValueError("objective_weights must have the same length as x_vars.")
-        # objective = quicksum(weights[i] * x_vars[i] for i in range(len(x_vars)))
         objective = -quicksum(x_vars[i] for i in range(len(x_vars)))  # Minimise sum of kept activations
     model.setObjective(objective, GRB.MINIMIZE)
     model.optimize()

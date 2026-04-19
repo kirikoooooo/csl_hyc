@@ -194,14 +194,10 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
                     calls = stat["forward_calls"]
                     total_time = stat["forward_total_time"]
                     avg_time = total_time / (calls - 1) if calls > 1 else 0.0
-
-                    if dist_type == "cross":
-                        logger.info(f"[Shapelet {length:>3}] forward_avg={avg_time:.6f}s over {calls} calls")
-                    else:
-                        peak_mb = stat["peak_mem"] / 1024 ** 2 if stat["peak_mem"] else 0
-                        final_mb = stat["final_mem"] / 1024 ** 2 if stat["final_mem"] else 0
-                        logger.info(f"[Shapelet {length:>3}] forward_avg={avg_time:.6f}s over {calls} calls | "
-                              f"peak={peak_mb:.2f}MB | final={final_mb:.2f}MB")
+                    peak_mb = stat["peak_mem"] / 1024 ** 2 if stat.get("peak_mem") else 0
+                    final_mb = stat["final_mem"] / 1024 ** 2 if stat.get("final_mem") else 0
+                    logger.info(f"[Shapelet {length:>3}] forward_avg={avg_time:.6f}s over {calls} calls | "
+                                f"peak={peak_mb:.2f}MB | final={final_mb:.2f}MB")
 
             for dist_type, records in logs.block_backward_stats_by_type.items():
                 logger.info(f"\n-- {dist_type.upper()} backward --")
@@ -210,13 +206,10 @@ def evaluate_UEA(dataset, seed=42, T=0.1, l=1e-2, ls=1.0, alpha=0.5, batch_size=
                     calls = stat["backward_calls"]
                     total_time = stat["backward_total_time"]
                     avg_time = total_time / (calls - 1) if calls > 1 else 0.0
-                    if dist_type == "cross":
-                        logger.info(f"[Shapelet {length:>3}] backward_avg={avg_time:.6f}s over {calls} calls")
-                    else:
-                        peak_mb = stat["peak_mem"] / 1024 ** 2 if stat["peak_mem"] else 0
-                        final_mb = stat["final_mem"] / 1024 ** 2 if stat["final_mem"] else 0
-                        logger.info(f"[Shapelet {length:>3}] backward_avg={avg_time:.6f}s over {calls} calls | "
-                                    f"peak={peak_mb:.2f}MB | final={final_mb:.2f}MB")
+                    peak_mb = stat["peak_mem"] / 1024 ** 2 if stat.get("peak_mem") else 0
+                    final_mb = stat["final_mem"] / 1024 ** 2 if stat.get("final_mem") else 0
+                    logger.info(f"[Shapelet {length:>3}] backward_avg={avg_time:.6f}s over {calls} calls | "
+                                f"peak={peak_mb:.2f}MB | final={final_mb:.2f}MB")
             logger.info("\n💾 模型第一次反向传播阶段的显存峰值（所有模块中的最大值）: "
                   f"{logs.global_backward_peak_mem / 1024 ** 2:.2f} MB")
             logger.info("\n💾 模型初始显存: "
